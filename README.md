@@ -329,8 +329,24 @@ pytest tests/test_conversations.py -v
 Everything: `pytest tests/ -v` (79 tests: 68 fast + 11 conversation, when a
 key is present).
 
-**Known remaining gaps** (not yet covered): the frontend/widget (no browser
-automation available in this environment); a parity test running the same
+**Frontend tests** (`frontend-tests/`) — a separate Playwright suite (real
+headless Chromium, not jsdom) covering the storefront, the embedded widget,
+and the contact page: search filtering, cart state, the widget open/close
+and Escape-key handling, sending a message end-to-end, footer/nav deep-links
+that pre-fill and auto-send a question, session-id persistence across turns,
+the greeting nudge, and that book cover images actually load (not silently
+falling back to the CSS placeholder). Runs against the real
+`app/channels/web.py` app with `run_turn` swapped for a deterministic stub
+(`tests/frontend_stub_server.py`) so it needs no API key and no network,
+same principle as the Python-side web-channel tests.
+```bash
+cd frontend-tests
+npm install && npx playwright install chromium
+npm test
+```
+18 tests, ~10 seconds, headless.
+
+**Known remaining gaps** (not yet covered): a parity test running the same
 assertions against the real AWS deployment as against the local stand-in
 (everything AWS-side was verified manually during the build, not via an
 automated suite that hits the live endpoints); concurrency behavior of

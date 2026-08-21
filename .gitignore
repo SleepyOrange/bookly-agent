@@ -8,3 +8,6 @@ __pycache__/
 aws/.aws-sam/
 aws/faq_docs/
 aws/samconfig.toml
+frontend-tests/node_modules/
+frontend-tests/test-results/
+frontend-tests/playwright-report/
