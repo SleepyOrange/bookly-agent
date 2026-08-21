@@ -1,0 +1,12 @@
+[
+  {"id": "project-hail-mary", "title": "Project Hail Mary", "author": "Andy Weir", "price": 14.99, "format": "print", "blurb": "A lone astronaut, a dying sun, and the only friend who can help.", "hue": "teal", "cover_url": "/static/covers/project-hail-mary.jpg"},
+  {"id": "dune", "title": "Dune", "author": "Frank Herbert", "price": 9.99, "format": "print", "blurb": "Desert planet. Deadly politics. A prophecy nobody asked for.", "hue": "rust", "cover_url": "/static/covers/dune.jpg"},
+  {"id": "the-hobbit", "title": "The Hobbit", "author": "J.R.R. Tolkien", "price": 10.00, "format": "print", "blurb": "A reluctant burglar, thirteen dwarves, and one very large dragon.", "hue": "brass", "cover_url": "/static/covers/the-hobbit.jpg"},
+  {"id": "atomic-habits", "title": "Atomic Habits", "author": "James Clear", "price": 13.00, "format": "print", "blurb": "Small changes, compounded -- a practical guide to building better ones.", "hue": "indigo", "cover_url": "/static/covers/atomic-habits.jpg"},
+  {"id": "fellowship-of-the-ring", "title": "The Fellowship of the Ring", "author": "J.R.R. Tolkien", "price": 11.50, "format": "print", "blurb": "The road goes ever on -- book one of the classic trilogy.", "hue": "olive", "cover_url": "/static/covers/fellowship-of-the-ring.jpg"},
+  {"id": "educated", "title": "Educated", "author": "Tara Westover", "price": 12.50, "format": "print", "blurb": "A memoir of growing up off the grid, and the cost of leaving.", "hue": "teal", "cover_url": "/static/covers/educated.jpg"},
+  {"id": "sapiens", "title": "Sapiens", "author": "Yuval Noah Harari", "price": 16.00, "format": "print", "blurb": "A brief history of how an ordinary ape came to run the planet.", "hue": "rust", "cover_url": "/static/covers/sapiens.jpg"},
+  {"id": "digital-fortress", "title": "Digital Fortress", "author": "Dan Brown", "price": 7.99, "format": "ebook", "blurb": "An unbreakable code, a rogue NSA program -- e-book only.", "hue": "brass", "cover_url": "/static/covers/digital-fortress.jpg"},
+  {"id": "midnight-library", "title": "The Midnight Library", "author": "Matt Haig", "price": 15.00, "format": "print", "blurb": "Between life and death, a library of every path not taken.", "hue": "indigo", "cover_url": "/static/covers/midnight-library.jpg"},
+  {"id": "klara-and-the-sun", "title": "Klara and the Sun", "author": "Kazuo Ishiguro", "price": 14.50, "format": "print", "blurb": "An artificial friend, observing the world, hoping to be chosen.", "hue": "olive", "cover_url": "/static/covers/klara-and-the-sun.jpg"}
+]

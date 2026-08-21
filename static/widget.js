@@ -1,0 +1,160 @@
+/* Bookly Support widget. Drop this + widget.css onto any page and it wires
+ * itself up against POST /api/chat -- the same endpoint the standalone
+ * /chat page and the CLI ultimately go through (app/orchestrator.py).
+ * No page-specific code required beyond including these two files.
+ *
+ * Exposes window.BooklyWidget = { open(), sendMessage(text) } so the host
+ * page can deep-link into the agent (see the footer links on the storefront).
+ */
+(function () {
+  const CHAT_ICON = `<svg class="bw-icon-chat" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 12c0-4.42 3.58-8 8-8s8 3.58 8 8-3.58 8-8 8c-1.13 0-2.2-.23-3.18-.66L4 21l1.66-4.82C4.6 14.98 4 13.55 4 12Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>`;
+  const CLOSE_ICON = `<svg class="bw-icon-close" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="display:none"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`;
+
+  const root = document.createElement("div");
+  root.id = "bookly-widget";
+  root.innerHTML = `
+    <div class="bw-nudge" id="bw-nudge">
+      <button class="bw-nudge-close" id="bw-nudge-close" aria-label="Dismiss">&times;</button>
+      Hi! Need help with an order, a return, or a policy question?
+    </div>
+    <div class="bw-panel" role="dialog" aria-label="Bookly Support chat" aria-hidden="true">
+      <div class="bw-header">
+        <div class="bw-header-title">
+          <strong>Bookly Support</strong>
+          <span class="bw-status"><span class="bw-status-dot"></span>Usually replies in seconds</span>
+        </div>
+        <button class="bw-close" id="bw-close" aria-label="Close chat">&times;</button>
+      </div>
+      <div class="bw-log" id="bw-log"></div>
+      <div class="bw-suggestions" id="bw-suggestions">
+        <button type="button" data-msg="Where is my order?">Where's my order?</button>
+        <button type="button" data-msg="I want to return a book">Return a book</button>
+        <button type="button" data-msg="What's your return policy?">Return policy</button>
+      </div>
+      <form class="bw-form" id="bw-form">
+        <input type="text" id="bw-input" placeholder="Type a message..." autocomplete="off" aria-label="Message" />
+        <button type="submit">Send</button>
+      </form>
+    </div>
+    <button class="bw-launcher" id="bw-launcher" aria-haspopup="dialog" aria-expanded="false" aria-label="Open Bookly Support chat">
+      ${CHAT_ICON}${CLOSE_ICON}
+    </button>
+  `;
+  document.body.appendChild(root);
+
+  const launcher = root.querySelector("#bw-launcher");
+  const panel = root.querySelector(".bw-panel");
+  const closeBtn = root.querySelector("#bw-close");
+  const log = root.querySelector("#bw-log");
+  const form = root.querySelector("#bw-form");
+  const input = root.querySelector("#bw-input");
+  const suggestions = root.querySelector("#bw-suggestions");
+  const nudge = root.querySelector("#bw-nudge");
+  const nudgeClose = root.querySelector("#bw-nudge-close");
+
+  let sessionId = sessionStorage.getItem("bookly_session_id") || null;
+  let greeted = false;
+
+  function addBubble(role, text, pending) {
+    const row = document.createElement("div");
+    row.className = "bw-row " + role;
+    const bubble = document.createElement("div");
+    bubble.className = "bw-bubble" + (pending ? " pending" : "");
+    bubble.textContent = text;
+    row.appendChild(bubble);
+    log.appendChild(row);
+    log.scrollTop = log.scrollHeight;
+    return bubble;
+  }
+
+  function ensureGreeting() {
+    if (greeted) return;
+    greeted = true;
+    addBubble("agent", "Hi, I'm Bookly Support. Ask me about an order, a return, or a policy question -- how can I help?");
+  }
+
+  function openPanel() {
+    root.classList.add("open");
+    launcher.setAttribute("aria-expanded", "true");
+    panel.setAttribute("aria-hidden", "false");
+    nudge.classList.remove("show");
+    ensureGreeting();
+    setTimeout(() => input.focus(), 50);
+  }
+
+  function closePanel() {
+    root.classList.remove("open");
+    launcher.setAttribute("aria-expanded", "false");
+    panel.setAttribute("aria-hidden", "true");
+  }
+
+  function togglePanel() {
+    if (root.classList.contains("open")) closePanel();
+    else openPanel();
+  }
+
+  async function sendMessage(text) {
+    if (!text || !text.trim()) return;
+    if (!root.classList.contains("open")) openPanel();
+    addBubble("user", text);
+    input.value = "";
+    input.disabled = true;
+    const pending = addBubble("agent", "Thinking...", true);
+
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: sessionId, message: text }),
+      });
+      const data = await res.json();
+      sessionId = data.session_id;
+      sessionStorage.setItem("bookly_session_id", sessionId);
+      pending.textContent = data.reply;
+      pending.classList.remove("pending");
+    } catch (err) {
+      pending.textContent = "Something went wrong reaching support -- please try again in a moment.";
+      pending.classList.remove("pending");
+    } finally {
+      input.disabled = false;
+      input.focus();
+    }
+  }
+
+  launcher.addEventListener("click", togglePanel);
+  closeBtn.addEventListener("click", closePanel);
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    sendMessage(input.value);
+  });
+  suggestions.addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-msg]");
+    if (btn) sendMessage(btn.dataset.msg);
+  });
+  nudgeClose.addEventListener("click", (e) => {
+    e.stopPropagation();
+    nudge.classList.remove("show");
+  });
+  nudge.addEventListener("click", openPanel);
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && root.classList.contains("open")) closePanel();
+  });
+
+  // A quiet nudge after a few seconds on the page, once per visit.
+  if (!sessionStorage.getItem("bookly_nudge_shown")) {
+    setTimeout(() => {
+      if (!root.classList.contains("open")) {
+        nudge.classList.add("show");
+        sessionStorage.setItem("bookly_nudge_shown", "1");
+        setTimeout(() => nudge.classList.remove("show"), 9000);
+      }
+    }, 1800);
+  }
+
+  // Public API so the host page can deep-link into the agent.
+  window.BooklyWidget = {
+    open: openPanel,
+    close: closePanel,
+    sendMessage: sendMessage,
+  };
+})();

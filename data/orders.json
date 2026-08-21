@@ -1,0 +1,101 @@
+[
+  {
+    "order_id": "BK-10234",
+    "customer_email": "alice@example.com",
+    "customer_name": "Alice Nguyen",
+    "items": [
+      {"title": "Project Hail Mary", "author": "Andy Weir", "qty": 1, "price": 14.99, "format": "print", "returned": false}
+    ],
+    "order_date": "2026-08-05",
+    "status": "Delivered",
+    "delivery_date": "2026-08-09",
+    "tracking_number": "1Z999AA10123456784",
+    "carrier": "UPS",
+    "return_window_days": 30
+  },
+  {
+    "order_id": "BK-10877",
+    "customer_email": "alice@example.com",
+    "customer_name": "Alice Nguyen",
+    "items": [
+      {"title": "The Fellowship of the Ring", "author": "J.R.R. Tolkien", "qty": 1, "price": 11.50, "format": "print", "returned": false},
+      {"title": "Atomic Habits", "author": "James Clear", "qty": 1, "price": 13.00, "format": "print", "returned": false}
+    ],
+    "order_date": "2026-08-15",
+    "status": "Shipped",
+    "delivery_date": "2026-08-22",
+    "tracking_number": "1Z999AA10123999999",
+    "carrier": "UPS",
+    "return_window_days": 30
+  },
+  {
+    "order_id": "BK-11020",
+    "customer_email": "bob@example.com",
+    "customer_name": "Bob Ramirez",
+    "items": [
+      {"title": "Dune", "author": "Frank Herbert", "qty": 1, "price": 9.99, "format": "print", "returned": false}
+    ],
+    "order_date": "2026-07-01",
+    "status": "Delivered",
+    "delivery_date": "2026-07-06",
+    "tracking_number": "1Z999AA10123000111",
+    "carrier": "USPS",
+    "return_window_days": 30
+  },
+  {
+    "order_id": "BK-11500",
+    "customer_email": "bob@example.com",
+    "customer_name": "Bob Ramirez",
+    "items": [
+      {"title": "The Hobbit", "author": "J.R.R. Tolkien", "qty": 2, "price": 10.00, "format": "print", "returned": false}
+    ],
+    "order_date": "2026-08-18",
+    "status": "Processing",
+    "delivery_date": null,
+    "tracking_number": null,
+    "carrier": null,
+    "return_window_days": 30
+  },
+  {
+    "order_id": "BK-12010",
+    "customer_email": "alice@example.com",
+    "customer_name": "Alice Nguyen",
+    "items": [
+      {"title": "Digital Fortress", "author": "Dan Brown", "qty": 1, "price": 7.99, "format": "ebook", "returned": false}
+    ],
+    "order_date": "2026-08-10",
+    "status": "Delivered",
+    "delivery_date": "2026-08-10",
+    "tracking_number": null,
+    "carrier": null,
+    "return_window_days": 30
+  },
+  {
+    "order_id": "BK-12200",
+    "customer_email": "alice@example.com",
+    "customer_name": "Alice Nguyen",
+    "items": [
+      {"title": "Educated", "author": "Tara Westover", "qty": 1, "price": 12.50, "format": "print", "returned": true}
+    ],
+    "order_date": "2026-07-20",
+    "status": "Delivered",
+    "delivery_date": "2026-07-25",
+    "tracking_number": "1Z999AA10123777222",
+    "carrier": "UPS",
+    "return_window_days": 30
+  },
+  {
+    "order_id": "BK-12100",
+    "customer_email": "bob@example.com",
+    "customer_name": "Bob Ramirez",
+    "items": [
+      {"title": "Sapiens", "author": "Yuval Noah Harari", "qty": 1, "price": 16.00, "format": "print", "returned": false}
+    ],
+    "order_date": "2026-08-12",
+    "status": "Cancelled",
+    "delivery_date": null,
+    "tracking_number": null,
+    "carrier": null,
+    "return_window_days": 30
+  }
+]

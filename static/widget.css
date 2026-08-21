@@ -1,0 +1,194 @@
+/* Bookly Support widget -- self-contained, brand-token-driven so it can be
+   dropped onto any page that defines the same --bookly-* custom properties
+   (falls back to sane defaults if the host page doesn't). */
+#bookly-widget {
+  --bw-bg: var(--bookly-surface, #ffffff);
+  --bw-ink: var(--bookly-ink, #1b1d1c);
+  --bw-muted: var(--bookly-muted, #5b615c);
+  --bw-accent: var(--bookly-accent, #2c5f5a);
+  --bw-accent-ink: #ffffff;
+  --bw-bubble-agent: var(--bookly-surface-2, #ebe9e1);
+  --bw-border: var(--bookly-rule, #ddd9cc);
+  --bw-shadow: 0 12px 32px rgba(20, 20, 18, 0.18), 0 2px 8px rgba(20, 20, 18, 0.08);
+  position: fixed;
+  right: 22px;
+  bottom: 22px;
+  z-index: 9999;
+  font-family: var(--bookly-font-body, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+}
+
+#bookly-widget * { box-sizing: border-box; }
+
+.bw-nudge {
+  position: absolute;
+  right: 0;
+  bottom: 86px;
+  max-width: 220px;
+  background: var(--bw-bg);
+  color: var(--bw-ink);
+  border: 1px solid var(--bw-border);
+  border-radius: 14px;
+  padding: 12px 14px;
+  font-size: 13.5px;
+  line-height: 1.4;
+  box-shadow: var(--bw-shadow);
+  opacity: 0;
+  transform: translateY(6px);
+  pointer-events: none;
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+.bw-nudge.show { opacity: 1; transform: translateY(0); pointer-events: auto; cursor: pointer; }
+.bw-nudge button.bw-nudge-close {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1px solid var(--bw-border);
+  background: var(--bw-bg);
+  color: var(--bw-muted);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.bw-launcher {
+  width: 68px;
+  height: 68px;
+  border-radius: 50%;
+  border: none;
+  background: var(--bw-accent);
+  color: var(--bw-accent-ink);
+  box-shadow: var(--bw-shadow);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.15s ease;
+}
+.bw-launcher:hover { transform: scale(1.05); }
+.bw-launcher svg { width: 30px; height: 30px; }
+.bw-launcher .bw-icon-close { display: none; }
+#bookly-widget.open .bw-launcher .bw-icon-chat { display: none; }
+#bookly-widget.open .bw-launcher .bw-icon-close { display: block; }
+
+.bw-panel {
+  position: absolute;
+  right: 0;
+  bottom: 86px;
+  width: 380px;
+  max-width: calc(100vw - 44px);
+  height: 560px;
+  max-height: calc(100vh - 120px);
+  background: var(--bw-bg);
+  border: 1px solid var(--bw-border);
+  border-radius: 16px;
+  box-shadow: var(--bw-shadow);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  opacity: 0;
+  transform: translateY(12px) scale(0.98);
+  pointer-events: none;
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+#bookly-widget.open .bw-panel { opacity: 1; transform: translateY(0) scale(1); pointer-events: auto; }
+
+.bw-header {
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--bw-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex: none;
+}
+.bw-header-title { display: flex; flex-direction: column; gap: 2px; }
+.bw-header-title strong { font-size: 15px; color: var(--bw-ink); }
+.bw-status { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--bw-muted); }
+.bw-status-dot { width: 7px; height: 7px; border-radius: 50%; background: #3f9d5f; flex: none; }
+.bw-close {
+  border: none;
+  background: transparent;
+  color: var(--bw-muted);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 4px;
+}
+
+.bw-log {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.bw-row { display: flex; }
+.bw-row.user { justify-content: flex-end; }
+.bw-bubble {
+  max-width: 82%;
+  padding: 9px 13px;
+  border-radius: 13px;
+  font-size: 14px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+.bw-row.user .bw-bubble { background: var(--bw-ink); color: #fff; border-bottom-right-radius: 4px; }
+.bw-row.agent .bw-bubble { background: var(--bw-bubble-agent); color: var(--bw-ink); border-bottom-left-radius: 4px; }
+.bw-row.agent .bw-bubble.pending { color: var(--bw-muted); font-style: italic; }
+
+.bw-suggestions { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 18px 12px; flex: none; }
+.bw-suggestions button {
+  background: var(--bw-bg);
+  color: var(--bw-ink);
+  border: 1px solid var(--bw-border);
+  font-size: 12.5px;
+  padding: 6px 11px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.bw-suggestions button:hover { border-color: var(--bw-accent); }
+
+.bw-form {
+  display: flex;
+  gap: 8px;
+  padding: 12px 14px;
+  border-top: 1px solid var(--bw-border);
+  flex: none;
+}
+.bw-form input {
+  flex: 1;
+  padding: 10px 12px;
+  border-radius: 9px;
+  border: 1px solid var(--bw-border);
+  font-size: 14px;
+  background: var(--bw-bg);
+  color: var(--bw-ink);
+}
+.bw-form input:focus { outline: 2px solid var(--bw-accent); outline-offset: 1px; }
+.bw-form button {
+  padding: 0 15px;
+  border: none;
+  border-radius: 9px;
+  background: var(--bw-accent);
+  color: var(--bw-accent-ink);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.bw-form button:disabled { opacity: 0.5; cursor: default; }
+
+@media (max-width: 480px) {
+  #bookly-widget { right: 14px; bottom: 14px; }
+  .bw-panel { width: calc(100vw - 28px); height: calc(100vh - 106px); bottom: 82px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bw-panel, .bw-nudge { transition: none; }
+}

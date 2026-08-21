@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bookly Support</title>
+<style>
+  :root {
+    --bg: #f6f4f0;
+    --panel: #ffffff;
+    --ink: #241c14;
+    --muted: #7a7166;
+    --accent: #b5651d;
+    --accent-ink: #ffffff;
+    --bubble-user: #241c14;
+    --bubble-user-ink: #ffffff;
+    --bubble-agent: #efe9df;
+    --border: #e4ddd0;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    display: flex;
+    justify-content: center;
+    min-height: 100vh;
+  }
+  .app {
+    width: 100%;
+    max-width: 640px;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+  }
+  header {
+    padding: 20px 24px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  header h1 {
+    font-size: 18px;
+    margin: 0 0 2px;
+    letter-spacing: 0.2px;
+  }
+  header p {
+    margin: 0;
+    font-size: 13px;
+    color: var(--muted);
+  }
+  #log {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .row { display: flex; }
+  .row.user { justify-content: flex-end; }
+  .bubble {
+    max-width: 78%;
+    padding: 10px 14px;
+    border-radius: 14px;
+    font-size: 14.5px;
+    line-height: 1.45;
+    white-space: pre-wrap;
+  }
+  .row.user .bubble {
+    background: var(--bubble-user);
+    color: var(--bubble-user-ink);
+    border-bottom-right-radius: 4px;
+  }
+  .row.agent .bubble {
+    background: var(--bubble-agent);
+    color: var(--ink);
+    border-bottom-left-radius: 4px;
+  }
+  .row.agent .bubble.pending { color: var(--muted); font-style: italic; }
+  form {
+    display: flex;
+    gap: 8px;
+    padding: 16px 24px 20px;
+    border-top: 1px solid var(--border);
+  }
+  input[type=text] {
+    flex: 1;
+    padding: 12px 14px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    font-size: 14.5px;
+    background: var(--panel);
+    color: var(--ink);
+  }
+  input[type=text]:focus { outline: 2px solid var(--accent); }
+  button {
+    padding: 0 18px;
+    border: none;
+    border-radius: 10px;
+    background: var(--accent);
+    color: var(--accent-ink);
+    font-size: 14.5px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button:disabled { opacity: 0.5; cursor: default; }
+  .suggestions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 0 24px 12px;
+  }
+  .suggestions button {
+    background: var(--panel);
+    color: var(--ink);
+    border: 1px solid var(--border);
+    font-weight: 400;
+    font-size: 13px;
+    padding: 6px 12px;
+    border-radius: 999px;
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>Bookly Support</h1>
+    <p>Order status &middot; returns &amp; refunds &middot; shipping, password &amp; policy questions</p>
+  </header>
+  <div id="log"></div>
+  <div class="suggestions" id="suggestions">
+    <button type="button" data-msg="Where is my order?">Where is my order?</button>
+    <button type="button" data-msg="I want to return a book">I want to return a book</button>
+    <button type="button" data-msg="What's your return policy?">What's your return policy?</button>
+    <button type="button" data-msg="I forgot my password">I forgot my password</button>
+  </div>
+  <form id="form">
+    <input type="text" id="input" placeholder="Type a message..." autocomplete="off" />
+    <button type="submit">Send</button>
+  </form>
+</div>
+
+<script>
+const log = document.getElementById('log');
+const form = document.getElementById('form');
+const input = document.getElementById('input');
+const suggestions = document.getElementById('suggestions');
+let sessionId = null;
+
+function addBubble(role, text, pending=false) {
+  const row = document.createElement('div');
+  row.className = `row ${role}`;
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble' + (pending ? ' pending' : '');
+  bubble.textContent = text;
+  row.appendChild(bubble);
+  log.appendChild(row);
+  log.scrollTop = log.scrollHeight;
+  return bubble;
+}
+
+addBubble('agent', "Hi, I'm Bookly Support. Ask me about an order, a return, or a policy question -- how can I help?");
+
+async function sendMessage(text) {
+  if (!text.trim()) return;
+  addBubble('user', text);
+  input.value = '';
+  input.disabled = true;
+  const pendingBubble = addBubble('agent', 'Thinking...', true);
+
+  try {
+    const res = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_id: sessionId, message: text }),
+    });
+    const data = await res.json();
+    sessionId = data.session_id;
+    pendingBubble.textContent = data.reply;
+    pendingBubble.classList.remove('pending');
+  } catch (err) {
+    pendingBubble.textContent = 'Something went wrong reaching the server.';
+    pendingBubble.classList.remove('pending');
+  } finally {
+    input.disabled = false;
+    input.focus();
+  }
+}
+
+form.addEventListener('submit', (e) => {
+  e.preventDefault();
+  sendMessage(input.value);
+});
+
+suggestions.addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-msg]');
+  if (btn) sendMessage(btn.dataset.msg);
+});
+</script>
+</body>
+</html>

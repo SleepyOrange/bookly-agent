@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bookly &mdash; books worth staying up for</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232c5f5a'/%3E%3Cpath d='M6 9.5c3-2 6-2 9 0v14c-3-2-6-2-9 0v-14Z' fill='%23fff' opacity='0.95'/%3E%3Cpath d='M26 9.5c-3-2-6-2-9 0v14c3-2 6-2 9 0v-14Z' fill='%23fff' opacity='0.72'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="/static/widget.css">
+<style>
+  :root {
+    --bookly-bg: #f2f1eb;
+    --bookly-surface: #ffffff;
+    --bookly-surface-2: #ebe9e1;
+    --bookly-ink: #1b1d1c;
+    --bookly-muted: #5b615c;
+    --bookly-accent: #2c5f5a;
+    --bookly-accent-strong: #1e4642;
+    --bookly-brass: #96692a;
+    --bookly-rule: #ddd9cc;
+    --bookly-font-display: 'Fraunces', Georgia, serif;
+    --bookly-font-body: 'Archivo', -apple-system, BlinkMacSystemFont, sans-serif;
+    --bookly-font-mono: 'IBM Plex Mono', monospace;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bookly-bg);
+    color: var(--bookly-ink);
+    font-family: var(--bookly-font-body);
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: inherit; }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 clamp(20px, 4vw, 48px); }
+
+  /* ---------- Header ---------- */
+  header.site {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    background: rgba(242, 241, 235, 0.92);
+    backdrop-filter: blur(6px);
+    border-bottom: 1px solid var(--bookly-rule);
+  }
+  .site-bar { display: flex; align-items: center; justify-content: space-between; padding: 16px 0; gap: 20px; }
+  .logo { font-family: var(--bookly-font-display); font-weight: 600; font-size: 22px; letter-spacing: -0.01em; display: flex; align-items: center; gap: 9px; text-decoration: none; }
+  .logo-mark { width: 28px; height: 28px; flex: none; }
+  nav.site-nav { display: flex; align-items: center; gap: 26px; }
+  nav.site-nav a { text-decoration: none; font-size: 14px; color: var(--bookly-ink); cursor: pointer; }
+  nav.site-nav a:hover { color: var(--bookly-accent); }
+  .cart-btn { position: relative; background: none; border: none; cursor: pointer; padding: 6px; color: var(--bookly-ink); display: flex; }
+  .cart-btn svg { width: 21px; height: 21px; }
+  .cart-count {
+    position: absolute; top: -3px; right: -5px;
+    background: var(--bookly-accent); color: #fff;
+    font-family: var(--bookly-font-mono); font-size: 10px; font-weight: 500;
+    min-width: 16px; height: 16px; border-radius: 999px;
+    display: none; align-items: center; justify-content: center; padding: 0 3px;
+  }
+  .cart-count.show { display: flex; }
+
+  /* ---------- Hero ---------- */
+  .hero { padding: 60px 0 52px; }
+  .hero-grid { display: grid; grid-template-columns: 1.15fr 0.85fr; gap: 40px; align-items: center; }
+  .hero h1 {
+    font-family: var(--bookly-font-display);
+    font-size: clamp(36px, 5.4vw, 58px);
+    font-weight: 600;
+    line-height: 1.06;
+    letter-spacing: -0.01em;
+    max-width: 15ch;
+    text-wrap: balance;
+    margin: 0;
+  }
+  .hero p.lede { font-size: 17px; color: var(--bookly-muted); max-width: 52ch; margin: 18px 0 30px; line-height: 1.6; }
+  .hero-art { width: 100%; height: auto; overflow: visible; }
+  .hero-art .shelf { fill: var(--bookly-rule); }
+  .hero-art .shadow { fill: var(--bookly-ink); opacity: 0.06; }
+  .search-row { display: flex; gap: 10px; max-width: 460px; }
+  .search-row input {
+    flex: 1; padding: 13px 16px; border-radius: 10px; border: 1px solid var(--bookly-rule);
+    background: var(--bookly-surface); color: var(--bookly-ink); font-size: 14.5px; font-family: var(--bookly-font-body);
+  }
+  .search-row input:focus { outline: 2px solid var(--bookly-accent); outline-offset: 1px; }
+  .trust-row { display: flex; gap: 22px; margin-top: 26px; flex-wrap: wrap; }
+  .trust-row span { font-size: 12.5px; color: var(--bookly-muted); font-family: var(--bookly-font-mono); }
+
+  /* ---------- Catalog ---------- */
+  .catalog { padding: 8px 0 64px; }
+  .catalog-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 26px; gap: 16px; flex-wrap: wrap; }
+  .catalog-head h2 { font-family: var(--bookly-font-display); font-size: 26px; font-weight: 600; margin: 0; }
+  .catalog-head .count { font-size: 13px; color: var(--bookly-muted); font-family: var(--bookly-font-mono); }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(178px, 1fr));
+    gap: 24px 20px;
+  }
+  .card {
+    background: var(--bookly-surface);
+    border: 1px solid var(--bookly-rule);
+    border-radius: 14px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 1px 2px rgba(27,29,28,0.04);
+  }
+  .cover-wrap { position: relative; aspect-ratio: 2 / 3; background: var(--bookly-surface-2); isolation: isolate; }
+  .cover-img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .cover-wrap .fmt-tag {
+    position: absolute; top: 10px; right: 10px;
+    font-family: var(--bookly-font-mono); font-size: 9.5px; letter-spacing: 0.06em; text-transform: uppercase;
+    color: #fff; background: rgba(0,0,0,0.55); padding: 3px 7px; border-radius: 999px;
+    z-index: 1;
+  }
+  /* Fallback cover -- swapped in only if a real cover photo fails to load */
+  .cover-fallback {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column; justify-content: space-between;
+    padding: 12px; color: #fff;
+  }
+  .cover-fallback::after {
+    content: "";
+    position: absolute; inset: 8px;
+    border: 1px solid rgba(255,255,255,0.24);
+    border-radius: 4px;
+    pointer-events: none;
+  }
+  .cover-fallback .monogram {
+    width: 25px; height: 25px; border-radius: 50%;
+    background: rgba(255,255,255,0.16);
+    border: 1px solid rgba(255,255,255,0.36);
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--bookly-font-display); font-weight: 600; font-size: 12.5px;
+    position: relative; z-index: 1;
+  }
+  .cover-fallback .cover-text { position: relative; z-index: 1; }
+  .cover-fallback .cover-rule { width: 26px; height: 2px; background: rgba(255,255,255,0.55); margin-bottom: 8px; border-radius: 1px; }
+  .cover-fallback .cover-title {
+    font-family: var(--bookly-font-display); font-size: 16.5px; font-weight: 600; line-height: 1.22; text-wrap: balance;
+    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .cover-fallback .cover-author {
+    font-family: var(--bookly-font-mono); font-size: 9.5px; letter-spacing: 0.07em; text-transform: uppercase;
+    color: rgba(255,255,255,0.82); margin-top: 6px;
+  }
+  .hue-teal   { background-image: repeating-linear-gradient(135deg, rgba(255,255,255,.05) 0 2px, transparent 2px 7px), linear-gradient(165deg, #2c5f5a, #17322f); }
+  .hue-rust   { background-image: repeating-linear-gradient(135deg, rgba(255,255,255,.05) 0 2px, transparent 2px 7px), linear-gradient(165deg, #a34a3a, #632a20); }
+  .hue-brass  { background-image: repeating-linear-gradient(135deg, rgba(255,255,255,.05) 0 2px, transparent 2px 7px), linear-gradient(165deg, #96692a, #5c4118); }
+  .hue-indigo { background-image: repeating-linear-gradient(135deg, rgba(255,255,255,.05) 0 2px, transparent 2px 7px), linear-gradient(165deg, #3d4a7a, #232a49); }
+  .hue-olive  { background-image: repeating-linear-gradient(135deg, rgba(255,255,255,.05) 0 2px, transparent 2px 7px), linear-gradient(165deg, #6b7a3d, #414a25); }
+
+  .card-body { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 3px; flex: 1; }
+  .card-body .title { font-family: var(--bookly-font-display); font-weight: 600; font-size: 15px; line-height: 1.25; text-wrap: balance; }
+  .card-body .author { font-family: var(--bookly-font-mono); font-size: 10.5px; letter-spacing: 0.04em; color: var(--bookly-muted); margin-bottom: 4px; }
+  .card-body .blurb { font-size: 12.5px; color: var(--bookly-muted); line-height: 1.45; flex: 1; margin: 2px 0 10px; }
+  .card-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .price { font-family: var(--bookly-font-mono); font-size: 14px; font-weight: 500; }
+  .add-btn {
+    font-size: 12.5px; font-weight: 600; padding: 7px 12px; border-radius: 8px;
+    border: 1px solid var(--bookly-accent); background: transparent; color: var(--bookly-accent-strong); cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+  }
+  .add-btn:hover { background: var(--bookly-accent); color: #fff; }
+  .add-btn.added { background: var(--bookly-accent); color: #fff; border-color: var(--bookly-accent); }
+  .empty-state { color: var(--bookly-muted); font-size: 14px; padding: 30px 0; }
+
+  /* ---------- Footer ---------- */
+  footer.site {
+    border-top: 1px solid var(--bookly-rule);
+    padding: 44px 0 36px;
+    margin-top: 20px;
+  }
+  .footer-grid { display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 32px; }
+  .footer-brand .logo { margin-bottom: 10px; }
+  .footer-brand p { font-size: 13px; color: var(--bookly-muted); max-width: 34ch; line-height: 1.55; }
+  .footer-col h4 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--bookly-muted); margin: 0 0 12px; font-weight: 600; }
+  .footer-col a, .footer-col button.link {
+    display: block; font-size: 13.5px; color: var(--bookly-ink); text-decoration: none;
+    margin-bottom: 9px; background: none; border: none; padding: 0; text-align: left; cursor: pointer; font-family: var(--bookly-font-body);
+  }
+  .footer-col a:hover, .footer-col button.link:hover { color: var(--bookly-accent); }
+  .footer-legal { margin-top: 34px; padding-top: 18px; border-top: 1px solid var(--bookly-rule); font-size: 12px; color: var(--bookly-muted); font-family: var(--bookly-font-mono); }
+
+  @media (max-width: 860px) {
+    .hero-grid { grid-template-columns: 1fr; }
+    .hero-art { max-width: 340px; margin-top: 12px; }
+  }
+
+  @media (max-width: 720px) {
+    nav.site-nav .nav-links { display: none; }
+    .footer-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<svg style="position:absolute; width:0; height:0; overflow:hidden" aria-hidden="true">
+  <symbol id="bookly-logo-mark" viewBox="0 0 32 32">
+    <rect width="32" height="32" rx="8" fill="#2c5f5a"/>
+    <path d="M6 9.5c3-2 6-2 9 0v14c-3-2-6-2-9 0v-14Z" fill="#fff" opacity="0.95"/>
+    <path d="M26 9.5c-3-2-6-2-9 0v14c3-2 6-2 9 0v-14Z" fill="#fff" opacity="0.72"/>
+  </symbol>
+</svg>
+
+<header class="site">
+  <div class="wrap site-bar">
+    <a class="logo" href="/"><svg class="logo-mark" aria-hidden="true"><use href="#bookly-logo-mark"/></svg> Bookly</a>
+    <nav class="site-nav">
+      <span class="nav-links" style="display:flex; gap:26px;">
+        <a href="#catalog">Browse</a>
+        <a href="/contact">Contact</a>
+        <a data-widget-open="1">Support</a>
+      </span>
+      <button class="cart-btn" id="cart-btn" aria-label="Cart">
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 4h2l2.4 12.2a2 2 0 0 0 2 1.6h7.5a2 2 0 0 0 2-1.6L21 8H6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="10" cy="21" r="1.4" fill="currentColor"/><circle cx="17.5" cy="21" r="1.4" fill="currentColor"/></svg>
+        <span class="cart-count" id="cart-count">0</span>
+      </button>
+    </nav>
+  </div>
+</header>
+
+<section class="hero">
+  <div class="wrap hero-grid">
+    <div>
+      <h1>Books worth staying up for.</h1>
+      <p class="lede">A small, opinionated bookstore &mdash; and a support agent that actually knows your order, not just your account number.</p>
+      <div class="search-row">
+        <input type="text" id="search" placeholder="Search titles or authors&hellip;" aria-label="Search the catalog" />
+      </div>
+      <div class="trust-row">
+        <span>FREE SHIPPING OVER £35</span>
+        <span>30-DAY RETURNS</span>
+        <span>SUPPORT IN THE CORNER &rarr;</span>
+      </div>
+    </div>
+    <svg class="hero-art" viewBox="0 0 320 260" aria-hidden="true">
+      <ellipse class="shadow" cx="160" cy="248" rx="120" ry="7"/>
+      <g transform="rotate(-4 83 234)">
+        <rect x="66" y="84" width="34" height="150" rx="3" fill="#2c5f5a"/>
+        <rect x="71" y="98" width="24" height="9" rx="2" fill="rgba(255,255,255,0.4)"/>
+      </g>
+      <g transform="rotate(3 123 234)">
+        <rect x="108" y="56" width="30" height="178" rx="3" fill="#a34a3a"/>
+        <rect x="113" y="70" width="20" height="9" rx="2" fill="rgba(255,255,255,0.4)"/>
+      </g>
+      <g transform="rotate(-2 163 234)">
+        <rect x="144" y="96" width="38" height="138" rx="3" fill="#96692a"/>
+        <rect x="149" y="110" width="28" height="9" rx="2" fill="rgba(255,255,255,0.4)"/>
+      </g>
+      <g transform="rotate(5 206 234)">
+        <rect x="190" y="38" width="32" height="196" rx="3" fill="#3d4a7a"/>
+        <rect x="195" y="52" width="22" height="9" rx="2" fill="rgba(255,255,255,0.4)"/>
+      </g>
+      <g transform="rotate(-3 247 234)">
+        <rect x="230" y="76" width="34" height="158" rx="3" fill="#6b7a3d"/>
+        <rect x="235" y="90" width="24" height="9" rx="2" fill="rgba(255,255,255,0.4)"/>
+      </g>
+      <rect class="shelf" x="40" y="234" width="240" height="8" rx="3"/>
+    </svg>
+  </div>
+</section>
+
+<section class="catalog" id="catalog">
+  <div class="wrap">
+    <div class="catalog-head">
+      <h2>New &amp; noteworthy</h2>
+      <span class="count" id="result-count"></span>
+    </div>
+    <div class="grid" id="grid"></div>
+    <div class="empty-state" id="empty-state" style="display:none;">No titles match &ldquo;<span id="empty-query"></span>&rdquo; &mdash; try another search, or ask support to help you find something.</div>
+  </div>
+</section>
+
+<footer class="site">
+  <div class="wrap footer-grid">
+    <div class="footer-brand">
+      <a class="logo" href="/"><svg class="logo-mark" aria-hidden="true"><use href="#bookly-logo-mark"/></svg> Bookly</a>
+      <p>An online bookstore, built as a Solutions Engineering take-home to show how a support agent is actually put together.</p>
+    </div>
+    <div class="footer-col">
+      <h4>Shop</h4>
+      <a href="#catalog">Browse all books</a>
+      <a href="#catalog">New releases</a>
+    </div>
+    <div class="footer-col">
+      <h4>Support</h4>
+      <button class="link" data-widget-ask="Where is my order?">Order status</button>
+      <button class="link" data-widget-ask="What's your return policy?">Returns &amp; refunds</button>
+      <button class="link" data-widget-ask="What's your shipping policy?">Shipping info</button>
+      <a href="/contact">Contact us</a>
+      <button class="link" data-widget-open="1">Chat with support</button>
+    </div>
+  </div>
+  <div class="wrap footer-legal">Bookly is a fictional store built for a Decagon Solutions Engineering exercise. Not a real bookstore.</div>
+</footer>
+
+<script src="/static/widget.js"></script>
+<script>
+  const grid = document.getElementById('grid');
+  const resultCount = document.getElementById('result-count');
+  const emptyState = document.getElementById('empty-state');
+  const emptyQuery = document.getElementById('empty-query');
+  const search = document.getElementById('search');
+  const cartBtn = document.getElementById('cart-btn');
+  const cartCount = document.getElementById('cart-count');
+
+  let catalog = [];
+  let cart = 0;
+
+  function render(items) {
+    grid.innerHTML = '';
+    if (!items.length) {
+      emptyState.style.display = 'block';
+      emptyQuery.textContent = search.value;
+      resultCount.textContent = '';
+      return;
+    }
+    emptyState.style.display = 'none';
+    resultCount.textContent = `${items.length} title${items.length === 1 ? '' : 's'}`;
+    for (const book of items) {
+      grid.appendChild(buildCard(book));
+    }
+  }
+
+  function fallbackCoverEl(book) {
+    const el = document.createElement('div');
+    el.className = `cover-fallback hue-${book.hue}`;
+    const initial = book.title.trim().charAt(0).toUpperCase();
+    el.innerHTML = `
+      <div class="monogram">${initial}</div>
+      <div class="cover-text">
+        <div class="cover-rule"></div>
+        <div class="cover-title">${book.title}</div>
+        <div class="cover-author">${book.author}</div>
+      </div>
+    `;
+    return el;
+  }
+
+  function buildCard(book) {
+    const card = document.createElement('div');
+    card.className = 'card';
+
+    const coverWrap = document.createElement('div');
+    coverWrap.className = 'cover-wrap';
+
+    const img = document.createElement('img');
+    img.className = 'cover-img';
+    img.src = book.cover_url;
+    img.alt = `Cover of ${book.title} by ${book.author}`;
+    img.loading = 'lazy';
+    img.addEventListener('error', () => img.replaceWith(fallbackCoverEl(book)), { once: true });
+    coverWrap.appendChild(img);
+
+    if (book.format === 'ebook') {
+      const tag = document.createElement('span');
+      tag.className = 'fmt-tag';
+      tag.textContent = 'E-book';
+      coverWrap.appendChild(tag);
+    }
+    card.appendChild(coverWrap);
+
+    const body = document.createElement('div');
+    body.className = 'card-body';
+    body.innerHTML = `
+      <div class="title">${book.title}</div>
+      <div class="author">${book.author}</div>
+      <div class="blurb">${book.blurb}</div>
+      <div class="card-foot">
+        <span class="price">£${book.price.toFixed(2)}</span>
+        <button class="add-btn" type="button">Add to cart</button>
+      </div>
+    `;
+    body.querySelector('.add-btn').addEventListener('click', (e) => {
+      cart += 1;
+      cartCount.textContent = cart;
+      cartCount.classList.add('show');
+      const btn = e.currentTarget;
+      btn.textContent = 'Added ✓';
+      btn.classList.add('added');
+      setTimeout(() => { btn.textContent = 'Add to cart'; btn.classList.remove('added'); }, 1400);
+    });
+    card.appendChild(body);
+
+    return card;
+  }
+
+  function applyFilter() {
+    const q = search.value.trim().toLowerCase();
+    if (!q) { render(catalog); return; }
+    render(catalog.filter(b => b.title.toLowerCase().includes(q) || b.author.toLowerCase().includes(q)));
+  }
+
+  search.addEventListener('input', applyFilter);
+
+  fetch('/api/catalog')
+    .then(res => res.json())
+    .then(data => { catalog = data; render(catalog); })
+    .catch(() => { grid.innerHTML = '<div class="empty-state">Could not load the catalog right now.</div>'; });
+
+  // Deep-link the storefront into the embedded agent.
+  document.addEventListener('click', (e) => {
+    const openEl = e.target.closest('[data-widget-open]');
+    const askEl = e.target.closest('[data-widget-ask]');
+    if (openEl) { e.preventDefault(); window.BooklyWidget && window.BooklyWidget.open(); }
+    if (askEl) { e.preventDefault(); window.BooklyWidget && window.BooklyWidget.sendMessage(askEl.dataset.widgetAsk); }
+  });
+
+  cartBtn.addEventListener('click', () => {
+    // Checkout isn't part of this exercise's scope -- the cart icon is a
+    // decorative nod to a real storefront, not a functioning purchase flow.
+    window.BooklyWidget && window.BooklyWidget.open();
+  });
+</script>
+</body>
+</html>
