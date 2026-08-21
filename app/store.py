@@ -2,12 +2,18 @@
 system" that owns order and FAQ data. This is the ONLY module in the agent
 that knows the external system exists; actions.py, knowledge.py, and
 guardrails.py only call functions here and don't know or care whether the
-data came from a network call or a local dict.
+data came from a network call, an MCP tool call, or a local dict.
 
-Deliberately NOT delegated to the external service: identity/access control.
-guardrails.verify_identity() still runs entirely in our process against
-whatever find_order() returns -- we never trust an upstream system to
-enforce our own security model.
+Two transports, same contract, picked via BOOKLY_TRANSPORT:
+- "rest" (default): plain HTTP against external_service/main.py or aws/.
+- "mcp": JSON-RPC against external_service/mcp_server.py via app/mcp_client.py.
+Both return identical response shapes -- that's what makes this a config
+change, not a rewrite, when swapping between them.
+
+Deliberately NOT delegated to the external service, on either transport:
+identity/access control. guardrails.verify_identity() still runs entirely
+in our process against whatever find_order() returns -- we never trust an
+upstream system to enforce our own security model.
 
 The product catalog (data/catalog.json) is unrelated storefront content, not
 part of this integration, so it stays a local fixture loaded directly.
@@ -18,11 +24,14 @@ from pathlib import Path
 
 import httpx
 
+from app import mcp_client
+
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 
 with open(DATA_DIR / "catalog.json") as f:
     CATALOG = json.load(f)
 
+TRANSPORT = os.environ.get("BOOKLY_TRANSPORT", "rest")
 EXTERNAL_API_URL = os.environ.get("BOOKLY_EXTERNAL_API_URL", "http://127.0.0.1:8100")
 
 _client: httpx.Client | None = None
@@ -37,7 +46,8 @@ def _get_client() -> httpx.Client:
 
 def set_client(client: httpx.Client):
     """Test hook: inject a client wired to an in-process ASGI transport
-    instead of a real network connection (see tests/conftest.py)."""
+    instead of a real network connection (see tests/conftest.py). REST
+    transport only -- MCP tests spin up a real (local) server instead."""
     global _client
     _client = client
 
@@ -50,8 +60,11 @@ def _unavailable(exc: Exception):
 
 
 def find_order(order_id: str):
+    order_id = order_id.strip().upper()
+    if TRANSPORT == "mcp":
+        return mcp_client.call_tool("get_order", {"order_id": order_id})
     try:
-        resp = _get_client().get(f"/orders/{order_id.strip().upper()}")
+        resp = _get_client().get(f"/orders/{order_id}")
     except httpx.RequestError as exc:
         return _unavailable(exc)
     if resp.status_code == 404:
@@ -61,9 +74,15 @@ def find_order(order_id: str):
 
 
 def check_eligibility(order_id: str, item_title: str | None = None):
+    order_id = order_id.strip().upper()
+    if TRANSPORT == "mcp":
+        args = {"order_id": order_id}
+        if item_title:
+            args["item_title"] = item_title
+        return mcp_client.call_tool("check_eligibility", args)
     try:
         params = {"item_title": item_title} if item_title else {}
-        resp = _get_client().get(f"/orders/{order_id.strip().upper()}/eligibility", params=params)
+        resp = _get_client().get(f"/orders/{order_id}/eligibility", params=params)
     except httpx.RequestError as exc:
         return _unavailable(exc)
     if resp.status_code == 404:
@@ -73,9 +92,12 @@ def check_eligibility(order_id: str, item_title: str | None = None):
 
 
 def create_return(order_id: str, item_title: str, reason: str):
+    order_id = order_id.strip().upper()
+    if TRANSPORT == "mcp":
+        return mcp_client.call_tool("create_return", {"order_id": order_id, "item_title": item_title, "reason": reason})
     try:
         resp = _get_client().post(
-            f"/orders/{order_id.strip().upper()}/returns",
+            f"/orders/{order_id}/returns",
             json={"item_title": item_title, "reason": reason},
         )
     except httpx.RequestError as exc:
@@ -94,6 +116,13 @@ def search_policy(query: str):
     Knowledge Base in AWS, or a lexical stand-in for local dev (see
     external_service/data_store.py). Either way, callers never see the
     difference."""
+    if TRANSPORT == "mcp":
+        result = mcp_client.call_tool("search_policy", {"query": query})
+        if result.get("error") == "no_match":
+            return [], None
+        if "error" in result:
+            return None, result
+        return result["matches"], None
     try:
         resp = _get_client().get("/faq", params={"q": query})
     except httpx.RequestError as exc:

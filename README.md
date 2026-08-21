@@ -90,6 +90,37 @@ control entirely).
 
 Full rationale and trade-offs are in the pitch deck.
 
+### MCP
+
+Decagon's own integrations page describes three tiers: pre-built connectors,
+self-serve APIs, and **MCP** ("an open standard allowing connection to any
+data system or application for real-time data and actions"). The REST API
+above is tier 2; `external_service/mcp_server.py` wraps the exact same four
+operations (`get_order`, `check_eligibility`, `create_return`,
+`search_policy`) as MCP tools instead of REST endpoints -- tier 3, same
+business logic, different wire protocol (JSON-RPC over streamable HTTP).
+
+This is the boundary swap the layered architecture was built to make cheap:
+switching transports is a single env var, `BOOKLY_TRANSPORT=rest|mcp`
+(default `rest`), read once in `app/store.py`. Nothing in `actions.py`,
+`knowledge.py`, `guardrails.py`, or the orchestrator changed.
+
+One real engineering wrinkle, not glossed over: the MCP SDK's client is
+async-only, but the whole call chain above `store.py` is synchronous by
+design (matching the orchestrator's synchronous tool-use loop). Rather than
+making everything async for one transport option, `app/mcp_client.py` runs a
+single persistent event loop on a background thread and bridges sync calls
+into it -- the same shape FastAPI's `TestClient` uses to let sync test code
+drive an async ASGI app. Deliberately kept firmly in place either way:
+`guardrails.verify_identity()` never moves to the transport layer -- see
+`tests/test_mcp_server.py::test_guardrails_still_enforced_via_mcp`.
+
+**Try it:**
+```bash
+python -m external_service.mcp_server   # starts the MCP server on :8200
+BOOKLY_TRANSPORT=mcp uvicorn app.channels.web:app --reload
+```
+
 Note on the storefront: `GET /api/catalog` (backed by `data/catalog.json`)
 serves the product grid on the storefront homepage. It's deliberately
 **not** a tool the agent can call, and deliberately **not** part of the
@@ -206,7 +237,8 @@ reset between tests.
 pytest tests/ -v --ignore=tests/test_conversations.py
 ```
 - `tests/test_actions.py`, `tests/test_guardrails.py`, `tests/test_knowledge.py`, `tests/test_handoff.py` -- the agent's tool/guardrail logic
-- `tests/test_external_service.py` -- the external service tested on its own terms, independent of the agent
+- `tests/test_external_service.py` -- the external service's REST API tested on its own terms, independent of the agent
+- `tests/test_mcp_server.py` -- the same external service over MCP instead, including a dedicated check that identity verification stays in `app/guardrails.py` regardless of transport. Unlike the others this spins up a real (local) MCP server on a real port rather than an in-process transport, since MCP's client needs an actual connection to negotiate against -- still no external network involved
 
 **Conversation tests** (`tests/test_conversations.py`) — live, multi-turn
 regression tests against the real model. These catch prompt regressions unit
@@ -222,7 +254,7 @@ set -a && source .env && set +a
 pytest tests/test_conversations.py -v
 ```
 
-Everything: `pytest tests/ -v` (39 tests: 31 fast + 8 conversation, when a
+Everything: `pytest tests/ -v` (44 tests: 36 fast + 8 conversation, when a
 key is present).
 
 ## Try it
