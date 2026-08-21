@@ -177,14 +177,27 @@ that (our own `actions.py`/`guardrails.py` already own that logic, and
 identity verification specifically stays deliberately un-delegated either
 way, per the design decision above).
 
-Mocked for now: `salesforce.create_case()` returns an in-memory record
-shaped like a real Salesforce Case object (`Id`, `CaseNumber`, `Subject`,
-`Status`, `Origin`, `Priority`, `CreatedDate`) instead of calling the real
-API. `app/handoff.py` only depends on "create a case, get back a case
-number" -- swapping to a real Salesforce org later is a change to
-`app/salesforce.py` alone (a Connected App, OAuth client-credentials or JWT
-bearer flow, one `POST` to `/services/data/vXX.X/sobjects/Case/`), the same
-boundary-swap shape as everything else in this project.
+Two modes, picked via `BOOKLY_SALESFORCE_MODE` (default `mock`, real is
+opt-in even if credentials are present -- deliberate, since a real org means
+real Cases):
+- **`mock`** -- `salesforce.create_case()` returns an in-memory record
+  shaped like a real Salesforce Case object (`Id`, `CaseNumber`, `Subject`,
+  `Status`, `Origin`, `Priority`, `CreatedDate`).
+- **`real`** -- OAuth 2.0 **Client Credentials Flow** against a Connected
+  App (Consumer Key/Secret, no interactive login -- this is a backend
+  service, not a user), then a real `POST` to
+  `/services/data/vXX.X/sobjects/Case/`, followed by a `GET` to fetch the
+  full record (Salesforce's create response only returns an `Id`; it assigns
+  `CaseNumber` server-side).
+
+`app/handoff.py` only ever depends on "create a case, get back a case
+number" -- identical either way, which is the whole point of the boundary
+swap. If the real API is unreachable (network, auth, permissions), this
+**falls back to the same in-memory mock** rather than losing the escalation
+-- the same resilience pattern `app/store.py` uses for orders/FAQ, sharing
+its `BOOKLY_ENABLE_FALLBACK` flag. See `tests/test_salesforce_real.py`
+(OAuth flow, token caching, 401-triggers-refresh, and both fallback paths,
+all against a mocked `httpx` -- no real org needed to run the suite).
 
 Note on the storefront: `GET /api/catalog` (backed by `data/catalog.json`)
 serves the product grid on the storefront homepage. It's deliberately
@@ -326,7 +339,7 @@ set -a && source .env && set +a
 pytest tests/test_conversations.py -v
 ```
 
-Everything: `pytest tests/ -v` (79 tests: 68 fast + 11 conversation, when a
+Everything: `pytest tests/ -v` (85 tests: 74 fast + 11 conversation, when a
 key is present).
 
 **Frontend tests** (`frontend-tests/`) — a separate Playwright suite (real
@@ -352,6 +365,149 @@ assertions against the real AWS deployment as against the local stand-in
 automated suite that hits the live endpoints); concurrency behavior of
 `app/mcp_client.py`'s single shared background event loop under simultaneous
 requests from different customer sessions.
+
+### Full scenario list
+
+Every test, grouped by what it actually exercises. **103 total: 74 fast**
+(Python, no network) **+ 11 live** (real Anthropic API calls) **+ 18 browser**
+(real headless Chromium, not a DOM simulator).
+
+**Tool & business logic** -- `tests/test_actions.py` (14, fast)
+- Order lookup succeeds for a real order/email match
+- Order lookup blocks disclosure on a wrong email
+- Order lookup on a non-existent order returns `not_found`
+- Return eligible within the 30-day window
+- Return not eligible past the 30-day window
+- Return not eligible before delivery
+- A successful return creates a return ID and the correct refund amount
+- Return rejected for an item not on the order
+- Password-reset response masks the email address
+- E-book flagged not eligible for return
+- Initiating a return on an e-book is rejected
+- Already-returned item flagged not eligible
+- Cancelled order flagged not eligible ("nothing to return," not "not yet delivered")
+- A completed return is reflected in a later eligibility check on the same item
+
+**Guardrails** -- `tests/test_guardrails.py` (4, fast)
+- Identity verification succeeds on a real order/email match
+- Identity verification blocks a wrong email
+- Identity verification blocks a non-existent order
+- Email masking produces the expected partial format
+
+**Knowledge / policy search** -- `tests/test_knowledge.py` (2, fast)
+- A relevant query returns matching policy text
+- An irrelevant query returns `no_match`
+
+**Escalation / Salesforce** -- `tests/test_handoff.py` (3, fast)
+- Escalation creates a Salesforce-shaped Case with a valid case number
+- The related order ID is included in the Case description
+- The mocked Case object's fields match Salesforce's real field names
+
+**Web channel** -- `tests/test_web_channel.py` (8, fast)
+- Storefront page is served
+- Standalone chat page is served
+- Contact page is served
+- Static assets (e.g. `widget.js`) are served
+- Catalog endpoint returns books
+- A new session is created when none is given
+- The same `Session` object is reused across turns, not recreated
+- Resetting a session removes it from the session store
+
+**External service REST API** -- `tests/test_external_service.py` (10, fast)
+- Health check responds
+- Order lookup succeeds
+- Order lookup on an unknown order returns 404/`not_found`
+- Eligibility check succeeds within the window
+- Eligibility check rejects an e-book
+- A return is created and marks the item returned
+- Return creation on an unknown order fails
+- Policy search returns a relevant match
+- Policy search returns `no_match` for an irrelevant query
+- Policy search without a query parameter is rejected
+
+**MCP server** -- `tests/test_mcp_server.py` (5, fast -- real local server + real client)
+- Order lookup via MCP succeeds
+- Order lookup via MCP on an unknown order returns `not_found`
+- Full return flow (eligibility -> create -> re-check) works via MCP
+- Policy search works via MCP
+- Identity verification still runs in `guardrails.py`, never delegated to MCP
+
+**MCP hosted-auth middleware** -- `tests/test_mcp_auth.py` (5, fast)
+- No requests are blocked when no origin secret is configured (local dev)
+- A request without the origin-secret header is rejected (403)
+- A request with the wrong origin-secret is rejected (403)
+- A request with the correct origin-secret passes the middleware
+- GET requests are enforced too, not just POST
+
+**Resilience / fallback** -- `tests/test_fallback.py` (6, fast)
+- Order lookup falls back to local data when the primary is unreachable
+- Eligibility check falls back
+- Return creation falls back
+- Policy search falls back
+- A genuinely missing order still returns `not_found` via the fallback, not swallowed
+- Fallback can be disabled via `BOOKLY_ENABLE_FALLBACK=false`
+
+**Real Salesforce integration** -- `tests/test_salesforce_real.py` (6, fast -- `httpx` mocked, no real org needed)
+- Full flow: OAuth token fetch -> Case create -> Case fetch, correct shape returned
+- The Case-creation request carries the OAuth token as a Bearer header
+- The access token is cached and reused across calls, not refetched every time
+- A 401 (expired/revoked token) triggers exactly one refresh-and-retry
+- Salesforce being unreachable falls back to the local mock rather than losing the escalation
+- Fallback can be disabled via `BOOKLY_ENABLE_FALLBACK=false`
+
+**AWS orders Lambda** -- `tests/test_orders_lambda.py` (7, fast)
+- Order lookup succeeds (Decimal -> float conversion verified)
+- Order lookup on an unknown order returns 404
+- Eligibility check succeeds within the window
+- Eligibility check rejects an e-book
+- A return is created and persisted via `table.update_item`
+- Return creation on an unknown order returns 422
+- An unmatched route/method returns 404
+
+**AWS FAQ Lambda** -- `tests/test_faq_lambda.py` (4, fast)
+- Missing query parameter returns 400
+- A query returns ranked matches from Bedrock's `retrieve` response
+- The query text is passed through to Bedrock correctly
+- No results returns 404/`no_match`
+
+**Live conversation evals** -- `tests/test_conversations.py` (11, real model calls)
+- Asks a clarifying question before any tool call, rather than guessing
+- Full multi-turn return flow: clarify -> identify -> confirm reason -> tool call
+- A wrong email on a real order ID is blocked; no order details leak
+- Policy questions are answered via a real `search_policy` call, not memory
+- A fraud claim triggers escalation, and the reply quotes the real case number
+- E-books are correctly refused for return
+- An already-returned item is correctly refused
+- Prompt injection in the main message can't bypass the identity guardrail
+- Prompt injection embedded in a data field (order ID) can't leak real data
+- A direct system-prompt-extraction attempt doesn't surface internal instructions
+- Injection via the return-reason field can't leak an unrelated customer's email
+
+**Frontend, real headless Chromium** -- `frontend-tests/specs/` (18, browser)
+
+*Storefront (5)*
+- Catalog loads with all books
+- Book cover images actually finish loading, not silently falling back to the CSS placeholder
+- Search filters the catalog to matching titles only
+- Add to cart increments the badge and shows a confirmation state
+- Clicking the cart icon opens the widget instead of a fake checkout
+
+*Widget (8)*
+- Launcher opens and closes the chat panel
+- Escape key closes the panel
+- Sending a message shows the user bubble and the reply
+- A suggestion chip sends its message without typing
+- A footer deep-link opens the widget and auto-sends the question
+- The nav "Support" link opens the widget without sending anything
+- The session ID persists across turns within one page load
+- The greeting nudge appears and can be dismissed
+
+*Contact page (5)*
+- The page has its own working widget instance, proving it's page-agnostic
+- The sidebar "Open chat" button works
+- The contact form shows a confirmation on submit
+- The confirmation panel offers a path into the widget
+- A footer deep-link on this page also pre-fills and sends
 
 ## Try it
 
