@@ -1,0 +1,9 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    { "Sid": "Logs", "Effect": "Allow", "Action": ["logs:CreateLogGroup","logs:CreateLogStream","logs:PutLogEvents"], "Resource": "arn:aws:logs:eu-west-2:972472392780:log-group:/aws/codebuild/bookly-mcp-build*" },
+    { "Sid": "S3Source", "Effect": "Allow", "Action": ["s3:GetObject","s3:GetObjectVersion"], "Resource": "arn:aws:s3:::bookly-build-artifacts-972472392780/*" },
+    { "Sid": "EcrAuth", "Effect": "Allow", "Action": "ecr:GetAuthorizationToken", "Resource": "*" },
+    { "Sid": "EcrPush", "Effect": "Allow", "Action": ["ecr:BatchCheckLayerAvailability","ecr:PutImage","ecr:InitiateLayerUpload","ecr:UploadLayerPart","ecr:CompleteLayerUpload","ecr:BatchGetImage","ecr:GetDownloadUrlForLayer"], "Resource": "arn:aws:ecr:eu-west-2:972472392780:repository/bookly-mcp-server" }
+  ]
+}

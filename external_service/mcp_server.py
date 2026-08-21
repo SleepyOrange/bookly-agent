@@ -7,12 +7,33 @@ protocol: JSON-RPC over streamable HTTP instead of plain REST.
 
 Run standalone: python -m external_service.mcp_server (defaults to
 127.0.0.1:8200, MCP endpoint at /mcp).
+
+When hosted publicly (aws/mcp_apprunner/), API Gateway sits in front with an
+API key and injects a shared secret header on every request it proxies
+through. MCP_ORIGIN_SECRET here checks for that header, so a request that
+reaches this service *without* going through API Gateway -- someone who
+found the App Runner URL directly -- gets rejected. Auth (the API key)
+happens at the gateway; this is the defense-in-depth backstop against
+bypassing it, not the auth mechanism itself.
 """
+import os
+
 from mcp.server.mcpserver import MCPServer
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import PlainTextResponse
 
 from external_service import data_store
 
 mcp = MCPServer(name="bookly-external", version="1.0.0")
+
+ORIGIN_SECRET = os.environ.get("MCP_ORIGIN_SECRET")
+
+
+class OriginSecretMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        if request.headers.get("x-origin-secret") != ORIGIN_SECRET:
+            return PlainTextResponse("Forbidden -- request did not come through the gateway", status_code=403)
+        return await call_next(request)
 
 
 @mcp.tool()
@@ -51,5 +72,23 @@ def search_policy(query: str) -> dict:
     return {"query": query, "matches": matches}
 
 
+def build_app():
+    """The Starlette ASGI app, wrapped with the origin-secret check when one
+    is configured. Used by the container entrypoint (below) and importable
+    directly for e.g. `uvicorn external_service.mcp_server:build_app --factory`."""
+    app = mcp.streamable_http_app(host="0.0.0.0")
+    if ORIGIN_SECRET:
+        app.add_middleware(OriginSecretMiddleware)
+    return app
+
+
 if __name__ == "__main__":
-    mcp.run(transport="streamable-http", host="127.0.0.1", port=8200)
+    port = int(os.environ.get("PORT", "8200"))
+    if ORIGIN_SECRET:
+        # Container/AWS mode: bind all interfaces, enforce the origin secret.
+        import uvicorn
+
+        uvicorn.run(build_app(), host="0.0.0.0", port=port)
+    else:
+        # Local dev: unchanged from before.
+        mcp.run(transport="streamable-http", host="127.0.0.1", port=port)

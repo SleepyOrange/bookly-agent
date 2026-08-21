@@ -115,10 +115,44 @@ drive an async ASGI app. Deliberately kept firmly in place either way:
 `guardrails.verify_identity()` never moves to the transport layer -- see
 `tests/test_mcp_server.py::test_guardrails_still_enforced_via_mcp`.
 
-**Try it:**
+**Try it locally:**
 ```bash
 python -m external_service.mcp_server   # starts the MCP server on :8200
 BOOKLY_TRANSPORT=mcp uvicorn app.channels.web:app --reload
+```
+
+**Hosted on AWS**: the MCP server also runs as a real public deployment --
+**App Runner** (`aws/mcp_hosting/deploy.sh`) fronted by **API Gateway** for
+auth, same four tools, same code. App Runner was the natural fit over Lambda
+here: MCP's streamable-HTTP transport is a normal long-running process
+holding connections open, which is exactly what `mcp_server.py` already is
+locally -- Lambda's request-scoped, no-guaranteed-persistence execution
+model fights that (there's a `stateless_http` mode in the SDK that might
+work around it, but I didn't trust it without verifying a session survives
+across separate invocations, so I didn't build on that assumption).
+
+Two auth layers, deliberately at different points:
+- **API Gateway requires an API key** (native REST API v1 feature, a usage
+  plan tied to one key) -- this is the actual access control, enforced
+  before a request ever reaches App Runner.
+- **App Runner independently checks a shared-secret header**
+  (`MCP_ORIGIN_SECRET`) that only API Gateway's integration injects. This is
+  a backstop, not the auth mechanism: App Runner's default URL is still
+  technically public, so this closes the "found the URL, skip the gateway
+  entirely" path. Verified directly: hitting the App Runner URL without the
+  header gets a 403 from the app itself, before any tool logic runs.
+
+No local Docker was available in this environment, so the image is built by
+**AWS CodeBuild** from a zipped source upload rather than a local
+`docker build` + push -- CodeBuild's build environment has Docker built in
+(`privilegedMode: true`), and it keeps the whole pipeline AWS-native anyway.
+
+```bash
+aws/mcp_hosting/deploy.sh
+# prints the API Gateway URL + a fresh API key at the end
+export BOOKLY_TRANSPORT=mcp
+export BOOKLY_MCP_SERVER_URL=https://<api-id>.execute-api.eu-west-2.amazonaws.com/prod/mcp
+export BOOKLY_MCP_API_KEY=<key from the script output>
 ```
 
 Note on the storefront: `GET /api/catalog` (backed by `data/catalog.json`)

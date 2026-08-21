@@ -1,0 +1,16 @@
+# Bookly MCP server (external_service/mcp_server.py) -- hosted on AWS App
+# Runner. Build context is the repo root so external_service/ is available;
+# nothing from app/ is needed here, this container only serves MCP tools.
+FROM python:3.12-slim
+
+WORKDIR /srv
+
+COPY external_service/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY external_service/ external_service/
+
+ENV PORT=8200
+EXPOSE 8200
+
+CMD ["python", "-m", "external_service.mcp_server"]

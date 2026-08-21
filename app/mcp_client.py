@@ -14,10 +14,12 @@ import json
 import os
 import threading
 
+import httpx2
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 
 MCP_SERVER_URL = os.environ.get("BOOKLY_MCP_SERVER_URL", "http://127.0.0.1:8200/mcp")
+MCP_API_KEY = os.environ.get("BOOKLY_MCP_API_KEY")  # set when the server sits behind API Gateway
 
 _loop: asyncio.AbstractEventLoop | None = None
 _session: ClientSession | None = None
@@ -41,7 +43,8 @@ def _run_loop(loop):
 
 async def _connect():
     global _session, _streams_cm, _session_cm
-    _streams_cm = streamable_http_client(MCP_SERVER_URL)
+    http_client = httpx2.AsyncClient(headers={"x-api-key": MCP_API_KEY} if MCP_API_KEY else None)
+    _streams_cm = streamable_http_client(MCP_SERVER_URL, http_client=http_client)
     read, write, *_ = await _streams_cm.__aenter__()
     _session_cm = ClientSession(read, write)
     session = await _session_cm.__aenter__()
