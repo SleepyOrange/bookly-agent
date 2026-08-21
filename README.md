@@ -339,7 +339,7 @@ set -a && source .env && set +a
 pytest tests/test_conversations.py -v
 ```
 
-Everything: `pytest tests/ -v` (85 tests: 74 fast + 11 conversation, when a
+Everything: `pytest tests/ -v` (91 tests: 80 fast + 11 conversation, when a
 key is present).
 
 **Frontend tests** (`frontend-tests/`) — a separate Playwright suite (real
@@ -368,9 +368,11 @@ requests from different customer sessions.
 
 ### Full scenario list
 
-Every test, grouped by what it actually exercises. **103 total: 74 fast**
-(Python, no network) **+ 11 live** (real Anthropic API calls) **+ 18 browser**
-(real headless Chromium, not a DOM simulator).
+Every test, grouped by what it actually exercises. **109 total: 80 fast**
+(Python, no network -- 2 of these are live Salesforce tests that skip by
+default and only run on explicit opt-in, see below) **+ 11 live** (real
+Anthropic API calls) **+ 18 browser** (real headless Chromium, not a DOM
+simulator).
 
 **Tool & business logic** -- `tests/test_actions.py` (14, fast)
 - Order lookup succeeds for a real order/email match
@@ -454,6 +456,16 @@ Every test, grouped by what it actually exercises. **103 total: 74 fast**
 - A 401 (expired/revoked token) triggers exactly one refresh-and-retry
 - Salesforce being unreachable falls back to the local mock rather than losing the escalation
 - Fallback can be disabled via `BOOKLY_ENABLE_FALLBACK=false`
+
+**Salesforce mode safety** -- `tests/test_salesforce_config.py` (4, fast -- the ones that matter most: a regression here means real Cases could get created by accident)
+- The default mode is `mock` in a clean environment (verified via a fresh subprocess, not just monkeypatching)
+- `BOOKLY_SALESFORCE_MODE=real` is what actually flips it, and only that
+- Mode stays `mock` even when real credentials are present in the environment -- presence of credentials alone is never enough
+- Mock mode never makes an HTTP call at all (`httpx.post`/`get` would raise if it tried)
+
+**Salesforce live integration** -- `tests/test_salesforce_live.py` (2, opt-in only -- **skipped by default**, requires `BOOKLY_SALESFORCE_LIVE_TEST=1` plus real credentials to run)
+- A live-created Case has the real Salesforce shape (`Id` prefix, 8-digit `CaseNumber`, correct Status)
+- The full agent chain (Claude -> orchestrator -> `handoff.py` -> `salesforce.py`) reaches the real API and the reply quotes a real case number (also needs `ANTHROPIC_API_KEY`). This formalizes the manual verification originally run against org `00Dfj00000cNBkr` into something repeatable, rather than leaving "does this actually work" as a one-off fact from a terminal transcript. Every Case it creates is clearly marked `[TEST]` in the Subject and safe to close.
 
 **AWS orders Lambda** -- `tests/test_orders_lambda.py` (7, fast)
 - Order lookup succeeds (Decimal -> float conversion verified)
