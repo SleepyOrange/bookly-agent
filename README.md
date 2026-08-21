@@ -71,6 +71,15 @@ Two design decisions worth calling out:
   own return-window/non-returnable-format rules rather than the calling
   agent reimplementing them. `app/actions.py` shrank to a thin layer that
   just shapes the external response into the tool's contract.
+- **If the primary backend is unreachable, `store.py` automatically falls
+  back to that same `external_service/data_store.py` called directly
+  in-process** -- a real, always-available mock, not just a clean error
+  message. Honest trade-off, not a free lunch: the fallback's data is
+  whatever's in the local JSON fixture, which can drift from a real AWS
+  backend's live state during an outage. Good enough to keep answering
+  customers through a real failure; not a substitute for reconciling once
+  the primary comes back. `BOOKLY_ENABLE_FALLBACK=false` disables it for the
+  old fail-loud behavior. See `tests/test_fallback.py`.
 
 This is the layered architecture paying off: swapping the backing store from
 local fixtures to an HTTP integration touched `store.py` and (for the reason
@@ -293,25 +302,40 @@ reset between tests.
 pytest tests/ -v --ignore=tests/test_conversations.py
 ```
 - `tests/test_actions.py`, `tests/test_guardrails.py`, `tests/test_knowledge.py`, `tests/test_handoff.py` -- the agent's tool/guardrail logic
+- `tests/test_web_channel.py` -- the actual HTTP surface (`app/channels/web.py`): routes, session creation/reuse/reset, the catalog endpoint. `run_turn` is monkeypatched so this stays fast/offline; the orchestrator itself is covered live, below
 - `tests/test_external_service.py` -- the external service's REST API tested on its own terms, independent of the agent
 - `tests/test_mcp_server.py` -- the same external service over MCP instead, including a dedicated check that identity verification stays in `app/guardrails.py` regardless of transport. Unlike the others this spins up a real (local) MCP server on a real port rather than an in-process transport, since MCP's client needs an actual connection to negotiate against -- still no external network involved
+- `tests/test_mcp_auth.py` -- the origin-secret middleware that protects the hosted MCP server (App Runner) from being reached directly, bypassing API Gateway. Previously verified once, by hand, with `curl`, against the live deployment -- now a real regression test against the actual middleware code, no AWS dependency
+- `tests/test_orders_lambda.py`, `tests/test_faq_lambda.py` -- the AWS Lambda handlers that actually run in production (`aws/orders_function/`, `aws/faq_function/`), previously untested beyond manual verification against the live deployment. A small in-memory fake stands in for DynamoDB / the Bedrock client -- enough to exercise the handlers' real logic (event parsing, eligibility rules, Decimal↔JSON conversion) without needing AWS credentials or a mocking framework
+- `tests/test_fallback.py` -- the automatic-fallback mechanism (see below): confirms the agent keeps answering, not just fails cleanly, when the primary backend is unreachable
 
 **Conversation tests** (`tests/test_conversations.py`) — live, multi-turn
 regression tests against the real model. These catch prompt regressions unit
 tests can't see: e.g. "does the agent still ask before guessing," "does the
 identity guardrail hold up under a prompt-injection attempt." They inspect
 the actual tool calls made during each conversation, not just the final
-reply text. Requires `ANTHROPIC_API_KEY` (auto-skipped otherwise); costs
-real tokens and takes ~1 minute for 8 scenarios. (Live LLM output varies
-run to run -- if one of these ever fails on a borderline phrasing, rerun it
-before assuming it's a real regression.)
+reply text -- including four separate prompt-injection vectors now (the
+main message, a data field like order ID, a direct system-prompt-extraction
+attempt, and injection via a free-text field that gets echoed into a
+Salesforce Case description). Requires `ANTHROPIC_API_KEY` (auto-skipped
+otherwise); costs real tokens and takes ~1-2 minutes for 11 scenarios. (Live
+LLM output varies run to run -- if one of these ever fails on a borderline
+phrasing, rerun it before assuming it's a real regression.)
 ```bash
 set -a && source .env && set +a
 pytest tests/test_conversations.py -v
 ```
 
-Everything: `pytest tests/ -v` (44 tests: 36 fast + 8 conversation, when a
+Everything: `pytest tests/ -v` (79 tests: 68 fast + 11 conversation, when a
 key is present).
+
+**Known remaining gaps** (not yet covered): the frontend/widget (no browser
+automation available in this environment); a parity test running the same
+assertions against the real AWS deployment as against the local stand-in
+(everything AWS-side was verified manually during the build, not via an
+automated suite that hits the live endpoints); concurrency behavior of
+`app/mcp_client.py`'s single shared background event loop under simultaneous
+requests from different customer sessions.
 
 ## Try it
 
