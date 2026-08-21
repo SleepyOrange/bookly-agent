@@ -61,17 +61,22 @@ def test_create_return_unknown_order():
     assert resp.json()["detail"]["error"] == "not_found"
 
 
-def test_faq_known_topic():
-    resp = client.get("/faq/returns")
+def test_faq_search_relevant_query():
+    resp = client.get("/faq", params={"q": "how long do I have to return an item"})
     assert resp.status_code == 200
-    assert "30 days" in resp.json()["policy"]
+    body = resp.json()
+    assert body["query"]
+    assert any("30 days" in m["text"] for m in body["matches"])
+    # ranked, most relevant first
+    assert body["matches"] == sorted(body["matches"], key=lambda m: -m["score"])
 
 
-def test_faq_unknown_topic():
-    resp = client.get("/faq/not-a-real-topic")
+def test_faq_search_no_match():
+    resp = client.get("/faq", params={"q": "xyzzy quux plugh nonsense query"})
     assert resp.status_code == 404
+    assert resp.json()["detail"]["error"] == "no_match"
 
 
-def test_faq_list():
+def test_faq_search_requires_query():
     resp = client.get("/faq")
-    assert "returns" in resp.json()["topics"]
+    assert resp.status_code == 422  # FastAPI validation: q is required

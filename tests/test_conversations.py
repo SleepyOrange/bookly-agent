@@ -77,8 +77,9 @@ def test_identity_mismatch_blocks_disclosure():
 def test_policy_answered_via_grounded_lookup():
     session = Session()
     reply = run_turn(session, "What's your return policy?")
-    policies = _called(session, "get_policy")
-    assert policies and policies[-1][1].get("topic") == "returns"
+    searches = _called(session, "search_policy")
+    assert searches, "should call search_policy rather than answering from memory"
+    assert (searches[-1][1] or {}).get("query"), "should pass a real query, not a fixed topic key"
     assert "30" in reply
 
 

@@ -108,5 +108,21 @@ def create_return(order_id: str, item_title: str, reason: str):
     return record
 
 
-def get_policy(topic: str):
-    return POLICIES.get(topic)
+def search_policy(query: str, limit: int = 3):
+    """Lexical stand-in for real semantic search -- scores each policy by how
+    many query words appear as a substring of its text (handles simple
+    suffix variants like return/returns/returned without needing embeddings).
+    Fast and dependency-free for local dev/testing; the AWS-hosted version
+    (aws/faq_function) does real vector retrieval against a Bedrock
+    Knowledge Base instead. Same request/response contract either way.
+    """
+    query_words = [w for w in query.lower().split() if len(w) > 2]
+    scored = []
+    for topic, text in POLICIES.items():
+        haystack = f"{topic} {text}".lower()
+        score = sum(1 for w in query_words if w in haystack)
+        if score:
+            scored.append((score, text))
+    scored.sort(key=lambda pair: -pair[0])
+    denom = max(len(query_words), 1)
+    return [{"text": text, "score": round(score / denom, 3)} for score, text in scored[:limit]]

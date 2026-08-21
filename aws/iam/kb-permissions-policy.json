@@ -1,0 +1,37 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "InvokeEmbeddingModel",
+      "Effect": "Allow",
+      "Action": "bedrock:InvokeModel",
+      "Resource": "arn:aws:bedrock:eu-west-2::foundation-model/amazon.titan-embed-text-v2:0"
+    },
+    {
+      "Sid": "ReadSourceDocs",
+      "Effect": "Allow",
+      "Action": ["s3:GetObject", "s3:ListBucket"],
+      "Resource": [
+        "arn:aws:s3:::bookly-faq-docs-972472392780",
+        "arn:aws:s3:::bookly-faq-docs-972472392780/*"
+      ]
+    },
+    {
+      "Sid": "S3VectorsAccess",
+      "Effect": "Allow",
+      "Action": [
+        "s3vectors:GetIndex",
+        "s3vectors:GetVectorBucket",
+        "s3vectors:PutVectors",
+        "s3vectors:GetVectors",
+        "s3vectors:QueryVectors",
+        "s3vectors:DeleteVectors",
+        "s3vectors:ListVectors"
+      ],
+      "Resource": [
+        "arn:aws:s3vectors:eu-west-2:972472392780:bucket/bookly-faq-vectors",
+        "arn:aws:s3vectors:eu-west-2:972472392780:bucket/bookly-faq-vectors/index/bookly-faq-index"
+      ]
+    }
+  ]
+}

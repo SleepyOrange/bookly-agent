@@ -22,7 +22,7 @@ is one architectural layer, not just a Python convenience grouping:
 app/channels/web.py     Channel layer      chat transport (FastAPI + static UI); cli.py is a 2nd channel
 app/orchestrator.py      Orchestration      the tool-use loop against the Anthropic Messages API
 app/memory.py             Memory/Session     transcript + verified case_state (order_id/email) per conversation
-app/knowledge.py          Knowledge          get_policy tool -- calls the external FAQ system on every call
+app/knowledge.py          Knowledge          search_policy tool -- real-time semantic search against the external FAQ system
 app/actions.py            Actions            lookup_order, check_return_eligibility, initiate_return, send_password_reset
 app/handoff.py            Escalation         escalate_to_human -- local mock ticket creation
 app/guardrails.py         Guardrails         identity verification + PII masking, enforced in code, not prompted
@@ -45,13 +45,19 @@ Orchestrator ──► actions.py / knowledge.py ──► store.py (HTTP client
                                                      │  GET /orders/{id}
                                                      │  GET /orders/{id}/eligibility
                                                      │  POST /orders/{id}/returns
-                                                     │  GET /faq/{topic}
+                                                     │  GET /faq?q=<free-text question>
                                                      ▼
-                                        external_service/ (separate process, :8100)
+                                external_service/ (local, :8100) OR aws/ (real AWS)
                                                      │
-                                        owns its own order + FAQ data,
-                                        including return-eligibility business rules
+                                owns its own order + FAQ data,
+                                including return-eligibility business rules
 ```
+
+`search_policy` takes the customer's actual question as free text, not a
+fixed topic key -- real retrieval, not a lookup table. Locally that's a
+lexical (substring-overlap) stand-in with zero dependencies; in AWS it's
+real semantic search against a Bedrock Knowledge Base. Same request/response
+contract either way, so the agent code can't tell which one it's talking to.
 
 Two design decisions worth calling out:
 
@@ -69,9 +75,11 @@ Two design decisions worth calling out:
 This is the layered architecture paying off: swapping the backing store from
 local fixtures to an HTTP integration touched `store.py` and (for the reason
 above) trimmed `actions.py` -- the orchestrator, prompts, guardrails, and
-every tool schema are untouched. Pointing `BOOKLY_EXTERNAL_API_URL` at a real
-hosted system (or fronting the same `/faq` contract with a RAG-backed
-retrieval engine) is a config change from here, not a rewrite.
+every tool schema are untouched. That claim is no longer hypothetical:
+`aws/` points the exact same `app/store.py` client at a real AWS deployment
+(DynamoDB + Lambda + API Gateway for orders, a Bedrock Knowledge Base for
+FAQ) with zero code changes anywhere in `app/` -- just the
+`BOOKLY_EXTERNAL_API_URL` env var. See **AWS deployment** below.
 
 Guardrails are deliberately split into two layers, which is a key design
 decision (see pitch deck): **soft guardrails** (`prompts.py` -- instructions
@@ -89,6 +97,57 @@ external integration -- browsing what's for sale is a storefront concern,
 not a support concern. The catalog stays a local fixture on purpose, the
 same way a real product catalog and a real order-management system would be
 separate systems entirely.
+
+## AWS deployment
+
+`aws/` is a real, deployed AWS stack (region `eu-west-2`) fronting the exact
+same `/orders` and `/faq` contract as `external_service/`, so the agent
+can't tell which one it's talking to -- only `BOOKLY_EXTERNAL_API_URL`
+changes.
+
+**Orders** -- DynamoDB (`bookly-orders`) + two Lambda functions
+(`aws/orders_function/`) + API Gateway HTTP API, deployed via AWS SAM
+(`aws/template.yaml`). Same eligibility/return logic as
+`external_service/data_store.py`, ported to run against DynamoDB.
+
+**FAQ** -- a real Bedrock Knowledge Base: the 7 policy docs live in S3,
+Bedrock ingests and embeds them (Titan Embed Text v2), and the vectors are
+stored in an **S3 Vector bucket** rather than OpenSearch Serverless
+specifically to avoid its idle-cost floor -- cheap at this scale, same
+managed ingestion pipeline. A Lambda (`aws/faq_function/`) wraps the
+`bedrock-agent-runtime` `Retrieve` API behind `GET /faq?q=...`. Knowledge
+Base + S3 Vectors aren't yet first-class CloudFormation resources with the
+same maturity as Lambda/DynamoDB, so that half is scripted explicitly
+(`aws/setup_knowledge_base.sh`) rather than forced into SAM.
+
+**Deploy from scratch:**
+```bash
+cd aws
+./setup_knowledge_base.sh          # prints the Knowledge Base ID at the end
+sam build
+sam deploy --stack-name bookly-external-api --resolve-s3 --region eu-west-2 \
+  --capabilities CAPABILITY_IAM --parameter-overrides KnowledgeBaseId=<id from above>
+python3 seed_orders.py             # loads external_service/data/orders.json into DynamoDB
+```
+
+**Point the agent at it:**
+```bash
+export BOOKLY_EXTERNAL_API_URL="https://<api-id>.execute-api.eu-west-2.amazonaws.com/prod"
+uvicorn app.channels.web:app --reload
+```
+
+**Cost**: DynamoDB (on-demand) and API Gateway/Lambda (free tier) are
+effectively £0 at demo scale. The Knowledge Base's ingestion + retrieval
+calls cost fractions of a penny each with Titan embeddings. S3 Vectors is
+usage-based with no idle cluster, unlike OpenSearch Serverless. Total build
++ test cost for this integration: a few pence.
+
+**Teardown**: `aws cloudformation delete-stack --stack-name bookly-external-api --region eu-west-2`
+removes the SAM-managed resources; the Knowledge Base, S3 buckets, S3 Vector
+bucket, and IAM role from `setup_knowledge_base.sh` need deleting separately
+since they're outside CloudFormation (`aws bedrock-agent delete-knowledge-base`,
+`aws s3 rb --force`, `aws s3vectors delete-vector-bucket`, `aws iam delete-role`
+after removing its inline policy).
 
 ## Setup
 

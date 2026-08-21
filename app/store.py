@@ -88,15 +88,20 @@ def create_return(order_id: str, item_title: str, reason: str):
     return resp.json()
 
 
-def get_policy_text(topic: str):
+def search_policy(query: str):
+    """Returns (matches, err). matches is a list of {"text", "score"} dicts,
+    most relevant first -- real semantic retrieval against a Bedrock
+    Knowledge Base in AWS, or a lexical stand-in for local dev (see
+    external_service/data_store.py). Either way, callers never see the
+    difference."""
     try:
-        resp = _get_client().get(f"/faq/{topic}")
+        resp = _get_client().get("/faq", params={"q": query})
     except httpx.RequestError as exc:
         return None, _unavailable(exc)
     if resp.status_code == 404:
-        return None, None
+        return [], None
     resp.raise_for_status()
-    return resp.json()["policy"], None
+    return resp.json()["matches"], None
 
 
 # Runtime table for escalation tickets -- unlike orders/FAQ, this stays local;

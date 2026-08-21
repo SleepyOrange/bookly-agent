@@ -1,4 +1,4 @@
-"""Knowledge layer tests -- policy lookup grounding."""
+"""Knowledge layer tests -- policy search grounding."""
 import sys
 from pathlib import Path
 
@@ -7,13 +7,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app import knowledge
 
 
-def test_get_policy_known_topic():
-    result = knowledge.get_policy("returns")
-    assert "30 days" in result["policy"]
+def test_search_policy_relevant_query():
+    result = knowledge.search_policy("how many days do I have to return something")
+    assert "matches" in result
+    assert any("30 days" in m["text"] for m in result["matches"])
 
 
-def test_get_policy_unknown_topic_lists_alternatives():
-    result = knowledge.get_policy("shipping_but_typo")
-    # enum-constrained by the tool schema in practice; defensive check here
-    assert result["error"] == "unknown_topic"
-    assert "shipping" in result["available_topics"]
+def test_search_policy_no_match():
+    result = knowledge.search_policy("xyzzy quux plugh nonsense query")
+    assert result["error"] == "no_match"

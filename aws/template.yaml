@@ -1,0 +1,98 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Bookly External API on AWS -- real order-management + FAQ integration
+  behind API Gateway. Orders are backed by DynamoDB; FAQ is backed by a
+  Bedrock Knowledge Base (bookly-faq-kb, created out-of-band -- its ID is
+  passed in as a parameter since Knowledge Base + S3 Vectors aren't yet
+  first-class CloudFormation resources with the maturity the rest of this
+  stack has).
+
+Parameters:
+  KnowledgeBaseId:
+    Type: String
+    Description: Bedrock Knowledge Base ID for FAQ retrieval (created via aws/setup_knowledge_base.sh)
+
+Globals:
+  Function:
+    Runtime: python3.12
+    MemorySize: 256
+    Timeout: 10
+    Architectures: [arm64]
+
+Resources:
+  BooklyApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: prod
+
+  OrdersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: bookly-orders
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: order_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: order_id
+          KeyType: HASH
+
+  OrdersFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: orders_function/
+      Handler: app.handler
+      Environment:
+        Variables:
+          ORDERS_TABLE: !Ref OrdersTable
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref OrdersTable
+      Events:
+        GetOrder:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref BooklyApi
+            Path: /orders/{order_id}
+            Method: GET
+        GetEligibility:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref BooklyApi
+            Path: /orders/{order_id}/eligibility
+            Method: GET
+        PostReturn:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref BooklyApi
+            Path: /orders/{order_id}/returns
+            Method: POST
+
+  FaqFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: faq_function/
+      Handler: app.handler
+      Environment:
+        Variables:
+          KNOWLEDGE_BASE_ID: !Ref KnowledgeBaseId
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: bedrock:Retrieve
+              Resource: !Sub arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:knowledge-base/${KnowledgeBaseId}
+      Events:
+        GetFaq:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref BooklyApi
+            Path: /faq
+            Method: GET
+
+Outputs:
+  ApiUrl:
+    Description: Base URL of the Bookly External API
+    Value: !Sub https://${BooklyApi}.execute-api.${AWS::Region}.amazonaws.com/prod
+  OrdersTableName:
+    Value: !Ref OrdersTable

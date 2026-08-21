@@ -5,10 +5,12 @@ app/actions.py, app/knowledge.py, or app/guardrails.py knows this service
 exists -- they only know the store.py interface.
 
 This is a deliberately swappable boundary: pointing app/store.py's
-BOOKLY_EXTERNAL_API_URL at a real hosted system (or fronting this same
-contract with a RAG-backed FAQ engine) is a config change, not a rewrite.
+BOOKLY_EXTERNAL_API_URL at a real hosted system is a config change, not a
+rewrite -- see aws/, which fronts this exact same /orders and /faq contract
+with DynamoDB and a Bedrock Knowledge Base (real semantic retrieval) instead
+of the lexical stand-in used here for fast local dev/testing.
 """
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel
 
 from external_service import data_store
@@ -50,14 +52,9 @@ def post_return(order_id: str, body: ReturnRequest):
     return result
 
 
-@app.get("/faq/{topic}")
-def get_faq(topic: str):
-    text = data_store.get_policy(topic)
-    if text is None:
-        raise HTTPException(status_code=404, detail={"error": "unknown_topic"})
-    return {"topic": topic, "policy": text}
-
-
 @app.get("/faq")
-def list_faq():
-    return {"topics": list(data_store.POLICIES.keys())}
+def search_faq(q: str = Query(..., min_length=1)):
+    matches = data_store.search_policy(q)
+    if not matches:
+        raise HTTPException(status_code=404, detail={"error": "no_match", "message": "No relevant policy content found."})
+    return {"query": q, "matches": matches}

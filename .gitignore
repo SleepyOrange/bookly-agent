@@ -5,3 +5,6 @@ __pycache__/
 .env
 .DS_Store
 .pytest_cache/
+aws/.aws-sam/
+aws/faq_docs/
+aws/samconfig.toml
