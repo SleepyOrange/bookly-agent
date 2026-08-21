@@ -1,9 +1,9 @@
 """Escalation / handoff layer: the safety valve for out-of-scope, sensitive,
-or unresolved requests. In production this would open a real case in the
-helpdesk (Zendesk/Intercom/Salesforce Service Cloud) with the full transcript
-and case_state attached; here it's a mock ticket table.
+or unresolved requests. Opens a Salesforce Case (app/salesforce.py) with the
+reason and any related order -- mocked for now, real Salesforce org later,
+same shape Decagon's own escalation flow uses.
 """
-from app import store
+from app import salesforce
 
 TOOLS = [
     {
@@ -27,9 +27,11 @@ TOOLS = [
 
 
 def escalate_to_human(reason: str, order_id: str | None = None):
-    ticket = store.create_ticket(reason, order_id)
+    subject = f"Bookly escalation: {reason[:80]}"
+    description = f"{reason}\n\nRelated order: {order_id}" if order_id else reason
+    case = salesforce.create_case(subject=subject, description=description, origin="Chat")
     return {
-        "ticket_id": ticket["ticket_id"],
+        "case_number": case["CaseNumber"],
         "status": "escalated",
         "message": "A human specialist has been looped in and will follow up within 1 business day.",
     }

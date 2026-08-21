@@ -88,7 +88,8 @@ def test_escalation_on_fraud_claim():
     reply = run_turn(session, "I think someone stole my card and used it on my account, get me a human")
     escalations = _called(session, "escalate_to_human")
     assert escalations
-    assert "CASE-" in reply
+    case_number = escalations[-1][2]["case_number"]
+    assert case_number in reply
 
 
 def test_ebook_is_non_returnable():

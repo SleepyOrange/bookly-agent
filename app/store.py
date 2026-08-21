@@ -131,18 +131,3 @@ def search_policy(query: str):
         return [], None
     resp.raise_for_status()
     return resp.json()["matches"], None
-
-
-# Runtime table for escalation tickets -- unlike orders/FAQ, this stays local;
-# it's a human-handoff concern, not part of this integration.
-_TICKETS = {}
-_next_ticket_id = 1
-
-
-def create_ticket(reason: str, order_id: str | None = None):
-    global _next_ticket_id
-    ticket_id = f"CASE-{5000 + _next_ticket_id}"
-    _next_ticket_id += 1
-    record = {"ticket_id": ticket_id, "reason": reason, "order_id": order_id}
-    _TICKETS[ticket_id] = record
-    return record

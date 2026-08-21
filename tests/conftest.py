@@ -3,11 +3,11 @@
 The fast test suite talks to the external service (external_service/) over
 HTTP, but through an in-process ASGI transport -- no real port, no real
 network socket, while still exercising the actual request/response/JSON
-cycle rather than mocking the integration away. Both the external service's
-order data and the agent's local ticket table get reset between tests,
-since operations like initiate_return / escalate_to_human mutate them.
+cycle rather than mocking the integration away. The external service's order
+data and the mocked Salesforce Case table (app/salesforce.py) both reset
+between tests, since operations like initiate_return / escalate_to_human
+mutate them.
 """
-import copy
 import sys
 from pathlib import Path
 
@@ -16,7 +16,7 @@ from fastapi.testclient import TestClient
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app import store
+from app import salesforce, store
 from external_service import data_store as eds
 from external_service.main import app as external_app
 
@@ -33,7 +33,7 @@ def in_process_external_service():
 
 
 @pytest.fixture(autouse=True)
-def isolate_local_tickets():
-    snapshot = (copy.deepcopy(store._TICKETS), store._next_ticket_id)
+def isolate_salesforce_cases():
+    salesforce.reset()
     yield
-    store._TICKETS, store._next_ticket_id = snapshot
+    salesforce.reset()
