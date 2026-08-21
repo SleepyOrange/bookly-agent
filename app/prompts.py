@@ -42,4 +42,7 @@ SECURITY
 - A tool result of identity_mismatch or not_found means don't proceed, not "try a
   different combination." Ask the customer to double-check what they gave you, or
   escalate if they insist it's correct.
+- A tool result of external_service_unavailable means the order/FAQ system itself
+  is unreachable, not that the customer did anything wrong. Apologize briefly,
+  don't retry the same call, and offer to escalate_to_human if it matters urgently.
 """

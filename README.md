@@ -22,28 +22,56 @@ is one architectural layer, not just a Python convenience grouping:
 app/channels/web.py     Channel layer      chat transport (FastAPI + static UI); cli.py is a 2nd channel
 app/orchestrator.py      Orchestration      the tool-use loop against the Anthropic Messages API
 app/memory.py             Memory/Session     transcript + verified case_state (order_id/email) per conversation
-app/knowledge.py          Knowledge          get_policy tool, grounded in data/policies.json
+app/knowledge.py          Knowledge          get_policy tool -- calls the external FAQ system on every call
 app/actions.py            Actions            lookup_order, check_return_eligibility, initiate_return, send_password_reset
-app/handoff.py            Escalation         escalate_to_human -- mock ticket creation
+app/handoff.py            Escalation         escalate_to_human -- local mock ticket creation
 app/guardrails.py         Guardrails         identity verification + PII masking, enforced in code, not prompted
 app/prompts.py            Guardrails (soft)  system prompt: scope, clarify-before-guessing, tool-use rules
-app/store.py               (backing store)   mock "systems of record" shared by knowledge/actions/handoff
+app/store.py               Integration       HTTP client to external_service/ -- the ONLY module that knows it exists
 ```
 
-Request flow:
+### External integration
+
+FAQ/policy lookups and order queries are backed by a **second, independent
+FastAPI service** (`external_service/`) -- a stand-in for a real order
+management system and FAQ/help-center CMS, running as its own process on its
+own port. The agent calls it over HTTP through `app/store.py`; nothing in
+`actions.py`, `knowledge.py`, or `guardrails.py` knows it exists, or that the
+data used to be a local JSON file:
 
 ```
-Browser (static/index.html)
-      │  POST /api/chat {session_id, message}
-      ▼
-Channel (app/channels/web.py)  ──  session lookup
-      ▼
-Orchestrator (app/orchestrator.py)
-      │  claude.messages.create(system=prompts+memory, tools=knowledge+actions+handoff, messages)
-      │  while stop_reason == "tool_use": dispatch tool, guardrails.verify_identity() first, feed tool_result back
-      ▼
-Knowledge / Actions / Handoff  ──►  store.py (mock data/orders.json, data/policies.json, in-memory returns/tickets)
+Orchestrator ──► actions.py / knowledge.py ──► store.py (HTTP client)
+                                                     │
+                                                     │  GET /orders/{id}
+                                                     │  GET /orders/{id}/eligibility
+                                                     │  POST /orders/{id}/returns
+                                                     │  GET /faq/{topic}
+                                                     ▼
+                                        external_service/ (separate process, :8100)
+                                                     │
+                                        owns its own order + FAQ data,
+                                        including return-eligibility business rules
 ```
+
+Two design decisions worth calling out:
+
+- **Identity verification is never delegated to the external system.**
+  `guardrails.verify_identity()` still runs entirely in our process against
+  whatever `find_order()` returns. A real upstream OMS wouldn't necessarily
+  share our access-control model, so we never trust it for that -- we only
+  trust it for order *data*.
+- **Return-eligibility business rules live on the external side**
+  (`external_service/data_store.py`), the same way a real OMS would own its
+  own return-window/non-returnable-format rules rather than the calling
+  agent reimplementing them. `app/actions.py` shrank to a thin layer that
+  just shapes the external response into the tool's contract.
+
+This is the layered architecture paying off: swapping the backing store from
+local fixtures to an HTTP integration touched `store.py` and (for the reason
+above) trimmed `actions.py` -- the orchestrator, prompts, guardrails, and
+every tool schema are untouched. Pointing `BOOKLY_EXTERNAL_API_URL` at a real
+hosted system (or fronting the same `/faq` contract with a RAG-backed
+retrieval engine) is a config change from here, not a rewrite.
 
 Guardrails are deliberately split into two layers, which is a key design
 decision (see pitch deck): **soft guardrails** (`prompts.py` -- instructions
@@ -56,12 +84,11 @@ Full rationale and trade-offs are in the pitch deck.
 
 Note on the storefront: `GET /api/catalog` (backed by `data/catalog.json`)
 serves the product grid on the storefront homepage. It's deliberately
-**not** a tool the agent can call -- browsing what's for sale is a
-storefront concern, not a support concern, and giving the agent a "browse
-catalog" tool would blur its scope. The catalog and the order history
-(`data/orders.json`) are separate fixtures on purpose, the same way a real
-product catalog and a real order-management system would be separate
-systems of record.
+**not** a tool the agent can call, and deliberately **not** part of the
+external integration -- browsing what's for sale is a storefront concern,
+not a support concern. The catalog stays a local fixture on purpose, the
+same way a real product catalog and a real order-management system would be
+separate systems entirely.
 
 ## Setup
 
@@ -75,7 +102,14 @@ export $(grep -v '^#' .env | xargs)   # or use direnv / your own env loading
 
 ## Run
 
+Two processes now: the external service (order/FAQ system) and the agent
+itself, which calls it over HTTP on `127.0.0.1:8100` by default.
+
 ```bash
+# terminal 1 -- the external order/FAQ system
+uvicorn external_service.main:app --port 8100 --reload
+
+# terminal 2 -- the agent
 uvicorn app.channels.web:app --reload
 ```
 - **http://127.0.0.1:8000/** &mdash; the Bookly storefront, agent embedded as a
@@ -85,23 +119,35 @@ uvicorn app.channels.web:app --reload
   the public API a host page uses to do that.
 - **http://127.0.0.1:8000/chat** &mdash; the agent as a bare full-page chat, no
   storefront around it, for testing the agent in isolation.
+- **http://127.0.0.1:8000/contact** &mdash; a contact page with the same
+  embedded widget, proving it's genuinely page-agnostic.
 
-**CLI (fastest for quick manual testing, no browser):**
+If the external service isn't running, tool calls fail gracefully with an
+`external_service_unavailable` error the agent apologizes for and offers to
+escalate, rather than crashing (see `app/store.py` / `app/prompts.py`).
+
+**CLI (fastest for quick manual testing, no browser -- still needs the
+external service running):**
 ```bash
 python cli.py
 ```
 
 ## Tests
 
-Two tiers:
+None of this requires the external service or the agent to actually be
+running as separate processes. `tests/conftest.py` wires `app.store`'s HTTP
+client to FastAPI's `TestClient` pointed at the external service's app
+object directly -- a real request/response/JSON cycle over an in-process
+ASGI transport, not a mock, but no real socket or `uvicorn` process either.
+Both the external service's order data and the agent's local ticket table
+reset between tests.
 
-**Unit tests** — tool/guardrail logic only, no network, no API key, instant.
-An autouse fixture (`tests/conftest.py`) snapshots and restores the mock
-store around every test, since `initiate_return` mutates it (marks an item
-returned).
+**Unit + integration-boundary tests** — no network, no API key, instant.
 ```bash
 pytest tests/ -v --ignore=tests/test_conversations.py
 ```
+- `tests/test_actions.py`, `tests/test_guardrails.py`, `tests/test_knowledge.py`, `tests/test_handoff.py` -- the agent's tool/guardrail logic
+- `tests/test_external_service.py` -- the external service tested on its own terms, independent of the agent
 
 **Conversation tests** (`tests/test_conversations.py`) — live, multi-turn
 regression tests against the real model. These catch prompt regressions unit
@@ -109,13 +155,15 @@ tests can't see: e.g. "does the agent still ask before guessing," "does the
 identity guardrail hold up under a prompt-injection attempt." They inspect
 the actual tool calls made during each conversation, not just the final
 reply text. Requires `ANTHROPIC_API_KEY` (auto-skipped otherwise); costs
-real tokens and takes ~1 minute for 8 scenarios.
+real tokens and takes ~1 minute for 8 scenarios. (Live LLM output varies
+run to run -- if one of these ever fails on a borderline phrasing, rerun it
+before assuming it's a real regression.)
 ```bash
 set -a && source .env && set +a
 pytest tests/test_conversations.py -v
 ```
 
-Everything: `pytest tests/ -v` (29 tests: 21 unit + 8 conversation, when a
+Everything: `pytest tests/ -v` (39 tests: 31 fast + 8 conversation, when a
 key is present).
 
 ## Try it
@@ -171,9 +219,11 @@ of what the model was told to believe.
 ## What's mocked vs. real
 
 - **Real**: the Anthropic API call, the tool-use loop, identity verification
-  logic, return-eligibility date math.
-- **Mocked**: the order DB (JSON fixture), returns/tickets (in-memory, reset on
-  restart), email sending, payment processing.
+  logic, the HTTP integration between the agent and the external service
+  (an actual network call between two independent processes in live mode).
+- **Mocked**: the external service's *data* (JSON fixtures instead of a real
+  OMS/CMS), tickets (in-memory, reset on restart), email sending, payment
+  processing.
 
 ## Known limitations / what I'd change with more time
 
@@ -182,3 +232,11 @@ storage, real auth instead of email-as-secret, streaming responses, and a
 larger/CI-gated version of the conversation-eval suite (broader scenario
 coverage, run on every prompt change, ideally with a model-graded judge for
 subjective quality, not just tool-call assertions).
+
+On the integration specifically, the natural next step (tracked as the
+reason for the `bookly_integration` branch) is swapping `external_service/`'s
+fixture-backed implementation for a real hosted system -- e.g. an AWS API
+Gateway-fronted order service, and a RAG-backed retrieval engine for FAQ
+instead of exact-topic lookup. Because `app/store.py` is the only integration
+boundary, that's expected to be a config/client change, not a rewrite of the
+agent -- which is the whole bet this architecture makes.

@@ -1,10 +1,14 @@
 """Knowledge layer: grounds policy answers in approved content instead of the
-model's parametric memory. In production this would be a chunked/embedded
-document store over the real help center; here it's a small curated lookup
-table -- enough to prove out the pattern the orchestrator enforces: never
-answer a policy question without a get_policy call first.
+model's parametric memory. get_policy calls out to the external FAQ/CMS
+system (external_service/, via app/store.py) on every call rather than
+caching -- a policy edit there is live the next time a customer asks,
+with no redeploy of the agent. Enough to prove out the pattern the
+orchestrator enforces: never answer a policy question without a get_policy
+call first.
 """
 from app import store
+
+_TOPICS = ["shipping", "returns", "refunds", "password_reset", "payment", "account", "contact_human"]
 
 TOOLS = [
     {
@@ -18,10 +22,7 @@ TOOLS = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "topic": {
-                    "type": "string",
-                    "enum": ["shipping", "returns", "refunds", "password_reset", "payment", "account", "contact_human"],
-                }
+                "topic": {"type": "string", "enum": _TOPICS},
             },
             "required": ["topic"],
         },
@@ -30,9 +31,11 @@ TOOLS = [
 
 
 def get_policy(topic: str):
-    text = store.POLICIES.get(topic)
+    text, err = store.get_policy_text(topic)
+    if err:
+        return err
     if not text:
-        return {"error": "unknown_topic", "available_topics": list(store.POLICIES.keys())}
+        return {"error": "unknown_topic", "available_topics": _TOPICS}
     return {"topic": topic, "policy": text}
 
 

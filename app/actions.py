@@ -2,9 +2,12 @@
 notifications) and reveal or change customer-specific state. Every action
 here is gated by the guardrails layer's identity check first -- an action
 tool never trusts order_id alone.
-"""
-from datetime import date
 
+Return eligibility and return creation are delegated to store.py, which
+calls the external order-management system (external_service/) -- that
+system owns the business rules for what's returnable, the same way a real
+OMS would. This module stays a thin, presentation-shaping layer on top.
+"""
 from app import guardrails, store
 
 TOOLS = [
@@ -86,62 +89,24 @@ def lookup_order(order_id: str, email: str):
     }
 
 
-def _eligibility(order, item_title: str | None):
-    if order["status"] == "Cancelled":
-        return {"eligible": False, "reason": "This order was already cancelled -- there's nothing to return."}
-    if order["status"] != "Delivered" or not order["delivery_date"]:
-        return {
-            "eligible": False,
-            "reason": f"Order is currently '{order['status']}' and hasn't been delivered yet, so it isn't eligible for return (it can still be cancelled if not yet shipped -- escalate if needed).",
-        }
-    if item_title:
-        item = next((i for i in order["items"] if i["title"] == item_title), None)
-        if not item:
-            titles = [i["title"] for i in order["items"]]
-            return {
-                "eligible": False,
-                "reason": f"'{item_title}' isn't in this order. Items on this order: {titles}.",
-            }
-        if item.get("returned"):
-            return {"eligible": False, "reason": f"'{item_title}' on this order has already been returned."}
-        if item.get("format") == "ebook":
-            return {"eligible": False, "reason": "E-books and other digital purchases are final sale and non-returnable."}
-    delivered = date.fromisoformat(order["delivery_date"])
-    days_since = (date.today() - delivered).days
-    window = order["return_window_days"]
-    if days_since > window:
-        return {
-            "eligible": False,
-            "reason": f"Delivered {days_since} days ago, which is past the {window}-day return window.",
-        }
-    return {
-        "eligible": True,
-        "reason": f"Delivered {days_since} days ago, within the {window}-day return window.",
-        "days_remaining": window - days_since,
-    }
-
-
 def check_return_eligibility(order_id: str, email: str, item_title: str | None = None):
     order, err = guardrails.verify_identity(order_id, email)
     if err:
         return err
-    return _eligibility(order, item_title)
+    return store.check_eligibility(order_id, item_title)
 
 
 def initiate_return(order_id: str, email: str, item_title: str, reason: str):
     order, err = guardrails.verify_identity(order_id, email)
     if err:
         return err
-    elig = _eligibility(order, item_title)
-    if not elig["eligible"]:
-        return {"error": "not_eligible", "message": elig["reason"]}
-    item = next(i for i in order["items"] if i["title"] == item_title)
-    refund_amount = round(item["price"] * item.get("qty", 1), 2)
-    record = store.create_return(order_id, item_title, reason, refund_amount)
+    result = store.create_return(order_id, item_title, reason)
+    if "error" in result:
+        return result
     return {
-        "return_id": record["return_id"],
+        "return_id": result["return_id"],
         "status": "Return initiated",
-        "refund_amount": refund_amount,
+        "refund_amount": result["refund_amount"],
         "next_steps": f"A prepaid return label has been emailed to {order['customer_email']}. Refund will be issued to the original payment method 5-7 business days after we receive the item.",
     }
 

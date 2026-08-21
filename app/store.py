@@ -1,63 +1,108 @@
-"""Mock data access layer for Bookly.
+"""Client for the Bookly External API (external_service/) -- the "external
+system" that owns order and FAQ data. This is the ONLY module in the agent
+that knows the external system exists; actions.py, knowledge.py, and
+guardrails.py only call functions here and don't know or care whether the
+data came from a network call or a local dict.
 
-Orders/policies are loaded from JSON fixtures (data/). Returns and escalation
-tickets are created at runtime and kept in-memory only -- this stands in for
-a real order-management / ticketing system in production.
+Deliberately NOT delegated to the external service: identity/access control.
+guardrails.verify_identity() still runs entirely in our process against
+whatever find_order() returns -- we never trust an upstream system to
+enforce our own security model.
+
+The product catalog (data/catalog.json) is unrelated storefront content, not
+part of this integration, so it stays a local fixture loaded directly.
 """
 import json
+import os
 from pathlib import Path
 
+import httpx
+
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
-
-with open(DATA_DIR / "orders.json") as f:
-    _ORDERS = {o["order_id"]: o for o in json.load(f)}
-
-with open(DATA_DIR / "policies.json") as f:
-    POLICIES = json.load(f)
 
 with open(DATA_DIR / "catalog.json") as f:
     CATALOG = json.load(f)
 
-# Runtime mock tables
-_RETURNS = {}
-_TICKETS = {}
-_next_return_id = 1
-_next_ticket_id = 1
+EXTERNAL_API_URL = os.environ.get("BOOKLY_EXTERNAL_API_URL", "http://127.0.0.1:8100")
+
+_client: httpx.Client | None = None
+
+
+def _get_client() -> httpx.Client:
+    global _client
+    if _client is None:
+        _client = httpx.Client(base_url=EXTERNAL_API_URL, timeout=5.0)
+    return _client
+
+
+def set_client(client: httpx.Client):
+    """Test hook: inject a client wired to an in-process ASGI transport
+    instead of a real network connection (see tests/conftest.py)."""
+    global _client
+    _client = client
+
+
+def _unavailable(exc: Exception):
+    return {
+        "error": "external_service_unavailable",
+        "message": f"Couldn't reach the order system right now ({exc.__class__.__name__}).",
+    }
 
 
 def find_order(order_id: str):
-    return _ORDERS.get(order_id.strip().upper())
+    try:
+        resp = _get_client().get(f"/orders/{order_id.strip().upper()}")
+    except httpx.RequestError as exc:
+        return _unavailable(exc)
+    if resp.status_code == 404:
+        return None
+    resp.raise_for_status()
+    return resp.json()
 
 
-def orders_for_email(email: str):
-    email = email.strip().lower()
-    return [o for o in _ORDERS.values() if o["customer_email"].lower() == email]
+def check_eligibility(order_id: str, item_title: str | None = None):
+    try:
+        params = {"item_title": item_title} if item_title else {}
+        resp = _get_client().get(f"/orders/{order_id.strip().upper()}/eligibility", params=params)
+    except httpx.RequestError as exc:
+        return _unavailable(exc)
+    if resp.status_code == 404:
+        return {"error": "not_found", "message": f"No order found with ID {order_id}."}
+    resp.raise_for_status()
+    return resp.json()
 
 
-def create_return(order_id: str, item_title: str, reason: str, refund_amount: float):
-    global _next_return_id
-    return_id = f"RT-{1000 + _next_return_id}"
-    _next_return_id += 1
-    record = {
-        "return_id": return_id,
-        "order_id": order_id,
-        "item_title": item_title,
-        "reason": reason,
-        "refund_amount": refund_amount,
-        "status": "label_sent",
-    }
-    _RETURNS[return_id] = record
-    mark_item_returned(order_id, item_title)
-    return record
+def create_return(order_id: str, item_title: str, reason: str):
+    try:
+        resp = _get_client().post(
+            f"/orders/{order_id.strip().upper()}/returns",
+            json={"item_title": item_title, "reason": reason},
+        )
+    except httpx.RequestError as exc:
+        return _unavailable(exc)
+    if resp.status_code == 422:
+        return resp.json()["detail"]
+    if resp.status_code == 404:
+        return {"error": "not_found", "message": f"No order found with ID {order_id}."}
+    resp.raise_for_status()
+    return resp.json()
 
 
-def mark_item_returned(order_id: str, item_title: str):
-    order = find_order(order_id)
-    if not order:
-        return
-    for item in order["items"]:
-        if item["title"] == item_title:
-            item["returned"] = True
+def get_policy_text(topic: str):
+    try:
+        resp = _get_client().get(f"/faq/{topic}")
+    except httpx.RequestError as exc:
+        return None, _unavailable(exc)
+    if resp.status_code == 404:
+        return None, None
+    resp.raise_for_status()
+    return resp.json()["policy"], None
+
+
+# Runtime table for escalation tickets -- unlike orders/FAQ, this stays local;
+# it's a human-handoff concern, not part of this integration.
+_TICKETS = {}
+_next_ticket_id = 1
 
 
 def create_ticket(reason: str, order_id: str | None = None):

@@ -1,0 +1,9 @@
+{
+  "shipping": "Standard shipping takes 5-7 business days and costs £4.99 (free on orders over £35). Express shipping takes 2-3 business days for £12.99. Bookly currently ships to the US and Canada only.",
+  "returns": "Items can be returned within 30 days of delivery if unused and in original condition. Digital/e-book purchases are final sale and non-returnable. Return shipping is free for defective or incorrect items; otherwise a £5.99 return label fee is deducted from the refund.",
+  "refunds": "Once we receive and inspect a returned item, refunds are issued to the original payment method within 5-7 business days. Original shipping fees are non-refundable unless the return is due to a Bookly error (wrong or damaged item).",
+  "password_reset": "Customers can reset their password anytime from the Bookly login page via 'Forgot password'. Support can also trigger a reset email directly after verifying the customer's account email address.",
+  "payment": "Bookly accepts Visa, Mastercard, Amex, and PayPal. We never store full card numbers, only the last 4 digits for reference.",
+  "account": "Customers can update their name, shipping addresses, and email preferences from Account Settings. Changing the email on file requires verifying the current email first.",
+  "contact_human": "If an issue can't be resolved by the agent, it can be escalated to a human support specialist, who typically responds within 1 business day."
+}

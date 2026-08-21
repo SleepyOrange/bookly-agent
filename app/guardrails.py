@@ -13,8 +13,11 @@ from app import store
 def verify_identity(order_id: str, email: str):
     """Returns (order, None) on success, or (None, error_dict) on failure."""
     order = store.find_order(order_id)
-    if not order:
+    if order is None:
         return None, {"error": "not_found", "message": f"No order found with ID {order_id}."}
+    if "error" in order:
+        # e.g. external_service_unavailable -- pass the store's error through as-is
+        return None, order
     if order["customer_email"].lower() != email.strip().lower():
         return None, {
             "error": "identity_mismatch",
