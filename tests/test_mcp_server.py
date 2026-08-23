@@ -77,6 +77,15 @@ def test_full_return_flow_via_mcp():
     assert "already been returned" in elig2["reason"]
 
 
+def test_cancel_return_via_mcp():
+    created = store.create_return("BK-10234", "Project Hail Mary", "test via MCP")
+    result = store.cancel_return("BK-10234", created["return_id"])
+    assert result["status"] == "cancelled"
+
+    elig = store.check_eligibility("BK-10234", "Project Hail Mary")
+    assert elig["eligible"] is True
+
+
 def test_search_policy_via_mcp():
     matches, err = store.search_policy("how many days to return an item")
     assert err is None

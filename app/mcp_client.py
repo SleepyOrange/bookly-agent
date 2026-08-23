@@ -14,7 +14,7 @@ import json
 import os
 import threading
 
-import httpx2
+import httpx
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 
@@ -43,7 +43,7 @@ def _run_loop(loop):
 
 async def _connect():
     global _session, _streams_cm, _session_cm
-    http_client = httpx2.AsyncClient(headers={"x-api-key": MCP_API_KEY} if MCP_API_KEY else None)
+    http_client = httpx.AsyncClient(headers={"x-api-key": MCP_API_KEY} if MCP_API_KEY else None)
     _streams_cm = streamable_http_client(MCP_SERVER_URL, http_client=http_client)
     read, write, *_ = await _streams_cm.__aenter__()
     _session_cm = ClientSession(read, write)

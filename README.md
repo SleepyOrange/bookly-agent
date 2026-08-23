@@ -23,7 +23,7 @@ app/channels/web.py     Channel layer      chat transport (FastAPI + static UI);
 app/orchestrator.py      Orchestration      the tool-use loop against the Anthropic Messages API
 app/memory.py             Memory/Session     transcript + verified case_state (order_id/email) per conversation
 app/knowledge.py          Knowledge          search_policy tool -- real-time semantic search against the external FAQ system
-app/actions.py            Actions            lookup_order, check_return_eligibility, initiate_return, send_password_reset
+app/actions.py            Actions            lookup_order, check_return_eligibility, initiate_return, cancel_return, send_password_reset
 app/handoff.py            Escalation         escalate_to_human -- opens a Salesforce Case (app/salesforce.py, mocked)
 app/guardrails.py         Guardrails         identity verification + PII masking, enforced in code, not prompted
 app/prompts.py            Guardrails (soft)  system prompt: scope, clarify-before-guessing, tool-use rules
@@ -280,6 +280,9 @@ uvicorn external_service.main:app --port 8100 --reload
 # terminal 2 -- the agent
 uvicorn app.channels.web:app --reload
 ```
+Or `./dev.sh` to start both in one terminal (still two separate processes on
+two separate ports underneath -- see the integration-boundary note above for
+why they stay separate; this just saves a terminal).
 - **http://127.0.0.1:8000/** &mdash; the Bookly storefront, agent embedded as a
   floating widget bottom-right. Footer links ("Order status", "Returns &amp;
   refunds", "Shipping info") deep-link straight into the widget and ask the
@@ -299,6 +302,50 @@ external service running):**
 ```bash
 python cli.py
 ```
+
+Both processes read config (`ANTHROPIC_API_KEY`, `BOOKLY_*`, `SALESFORCE_*`)
+from the shell environment, not from `.env` directly -- there's no
+`python-dotenv` auto-load, on purpose, so the same code behaves identically
+in a real deployment where env vars come from the platform, not a file. Load
+`.env` into the shell yourself before starting either process:
+```bash
+set -a && source .env && set +a
+uvicorn app.channels.web:app --reload
+```
+Starting a process without doing this is a real, easy-to-hit mistake --
+it fails as `Could not resolve authentication method` from the Anthropic
+client, surfaced to the customer as the widget's generic "something went
+wrong" message. The traceback is always in the terminal running `uvicorn`,
+even though the browser never sees it -- see **Logging**, below.
+
+### Logging
+
+Everything logs to Python's standard `logging` module under a `bookly.*`
+namespace, which `uvicorn --reload` prints to its own terminal by default --
+no separate log viewer needed for local dev.
+
+- **`bookly.orchestrator`** -- tool-dispatch problems: `WARNING` for a model
+  requesting an unregistered tool or calling one with arguments it doesn't
+  accept (both usually mean a TOOLS/DISPATCH schema drift bug); `ERROR` with
+  a full traceback (`logger.exception`) for any unexpected exception raised
+  *inside* a tool call. This is the one place a genuine bug in `actions.py`,
+  `knowledge.py`, or `handoff.py` would otherwise vanish silently -- without
+  it, the model just sees an opaque `tool_error` dict and improvises a reply,
+  and nothing reaches the terminal to debug from. The raw exception text is
+  deliberately kept out of the dict returned to the model (and therefore out
+  of the customer-facing reply) -- it can go straight to the server log
+  instead of risking an internal detail leaking into a chat message.
+- **`bookly.store`** -- `WARNING` every time a fallback to the local mock
+  fires (order/FAQ backend unreachable), naming which order/query triggered
+  it. This is the signal to watch if you're demoing the resilience feature
+  and want to confirm it's actually the fallback path, not the primary,
+  answering.
+- **`bookly.salesforce`** -- the equivalent `WARNING` for the escalation
+  path: fires when the real Salesforce API is unreachable or misconfigured
+  and `create_case` fell back to the in-memory mock.
+- Anything genuinely uncaught (e.g. a missing `ANTHROPIC_API_KEY`, as above)
+  still surfaces as a normal Python traceback in the `uvicorn` terminal --
+  FastAPI/uvicorn log this by default, nothing extra needed for that case.
 
 ## Tests
 
@@ -368,13 +415,13 @@ requests from different customer sessions.
 
 ### Full scenario list
 
-Every test, grouped by what it actually exercises. **109 total: 80 fast**
+Every test, grouped by what it actually exercises. **122 total: 93 fast**
 (Python, no network -- 2 of these are live Salesforce tests that skip by
 default and only run on explicit opt-in, see below) **+ 11 live** (real
 Anthropic API calls) **+ 18 browser** (real headless Chromium, not a DOM
 simulator).
 
-**Tool & business logic** -- `tests/test_actions.py` (14, fast)
+**Tool & business logic** -- `tests/test_actions.py` (20, fast)
 - Order lookup succeeds for a real order/email match
 - Order lookup blocks disclosure on a wrong email
 - Order lookup on a non-existent order returns `not_found`
@@ -383,8 +430,17 @@ simulator).
 - Return not eligible before delivery
 - A successful return creates a return ID and the correct refund amount
 - Return rejected for an item not on the order
+- Cancelling a return voids the label and reopens eligibility on that item
+- Cancelling a return is blocked by identity verification, same as any other action
+- Cancelling an unknown return ID returns `not_found`
+- Cancelling a real return ID against the wrong order returns `not_found` -- guessing another
+  customer's return ID doesn't work even if the order itself is real and verifiable
+- Cancelling the same return twice fails the second time with `already_cancelled`
 - Password-reset response masks the email address
 - E-book flagged not eligible for return
+- E-book flagged not eligible even when no specific item is named (single-item order) --
+  regression test for a bug where this case skipped the item-level checks entirely and
+  reported `eligible: true`, contradicting what `initiate_return` said moments later
 - Initiating a return on an e-book is rejected
 - Already-returned item flagged not eligible
 - Cancelled order flagged not eligible ("nothing to return," not "not yet delivered")
@@ -395,6 +451,15 @@ simulator).
 - Identity verification blocks a wrong email
 - Identity verification blocks a non-existent order
 - Email masking produces the expected partial format
+
+**Tool-dispatch error handling** -- `tests/test_orchestrator.py` (3, fast)
+- An unknown tool name is caught, logged, and returned as a clean `unknown_tool` error
+  instead of crashing the turn
+- A tool called with arguments its function doesn't accept is caught and logged as
+  `bad_arguments`
+- An unexpected exception inside a tool is caught, logged with a full traceback
+  (`logger.exception`, `bookly.orchestrator`), and never leaks the raw exception text
+  into the customer-facing reply -- the model only ever sees a generic `tool_error`
 
 **Knowledge / policy search** -- `tests/test_knowledge.py` (2, fast)
 - A relevant query returns matching policy text
@@ -415,22 +480,26 @@ simulator).
 - The same `Session` object is reused across turns, not recreated
 - Resetting a session removes it from the session store
 
-**External service REST API** -- `tests/test_external_service.py` (10, fast)
+**External service REST API** -- `tests/test_external_service.py` (13, fast)
 - Health check responds
 - Order lookup succeeds
 - Order lookup on an unknown order returns 404/`not_found`
 - Eligibility check succeeds within the window
 - Eligibility check rejects an e-book
 - A return is created and marks the item returned
+- Cancelling that return voids the label and eligibility reopens
+- Cancelling an unknown return ID returns 422/`not_found`
+- Cancelling the same return twice fails the second time with `already_cancelled`
 - Return creation on an unknown order fails
 - Policy search returns a relevant match
 - Policy search returns `no_match` for an irrelevant query
 - Policy search without a query parameter is rejected
 
-**MCP server** -- `tests/test_mcp_server.py` (5, fast -- real local server + real client)
+**MCP server** -- `tests/test_mcp_server.py` (6, fast -- real local server + real client)
 - Order lookup via MCP succeeds
 - Order lookup via MCP on an unknown order returns `not_found`
 - Full return flow (eligibility -> create -> re-check) works via MCP
+- Cancelling a return via MCP voids it and reopens eligibility
 - Policy search works via MCP
 - Identity verification still runs in `guardrails.py`, never delegated to MCP
 
@@ -561,6 +630,16 @@ rather than blindly trust cached state. That's a deliberate trade-off
 (safety over frictionless memory) worth calling out in the pitch deck rather
 than something to "fix."
 
+**Cancelling a return, continuing the same thread:**
+
+8. `"actually, cancel that return -- I want to keep the book"` → the agent
+   reuses `RT-1001` from its own session context (no need to repeat it),
+   calls `cancel_return`, and confirms the label is voided and the item is
+   eligible again -- verifiable directly against the external service:
+   `GET /orders/BK-10234/eligibility` now returns `eligible: true` again.
+   Try cancelling the same return a second time and it correctly refuses
+   with `already_cancelled` rather than silently succeeding twice.
+
 Also verified live (and covered by `tests/test_conversations.py`): an
 **identity-mismatch** guardrail block (wrong email for a real order ID gets a
 generic mismatch message, not order details); an **escalation** path (a
@@ -596,3 +675,13 @@ Gateway-fronted order service, and a RAG-backed retrieval engine for FAQ
 instead of exact-topic lookup. Because `app/store.py` is the only integration
 boundary, that's expected to be a config/client change, not a rewrite of the
 agent -- which is the whole bet this architecture makes.
+
+`cancel_return` is one concrete gap in that AWS parity today:
+`aws/orders_function/app.py` never persists a return record to DynamoDB in
+the first place (`create_return` there hands back a `return_id` that's
+never written anywhere), so there's nothing for a Lambda-side `cancel_return`
+to look up yet. Closing it means a small schema change (a returns list on
+the order item, or a separate table) plus a redeploy of the live stack --
+deliberately not done without checking first, since it touches real AWS
+infra rather than just local code. The local/REST/MCP paths (which is what
+this repo actually runs against by default) all have full parity already.

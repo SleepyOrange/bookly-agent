@@ -55,6 +55,34 @@ def test_create_return_success_and_marks_item_returned():
     assert "already been returned" in resp2.json()["detail"]["message"]
 
 
+def test_cancel_return_voids_label_and_restores_eligibility():
+    created = client.post("/orders/BK-10234/returns", json={"item_title": "Project Hail Mary", "reason": "N/A"})
+    return_id = created.json()["return_id"]
+
+    resp = client.post(f"/orders/BK-10234/returns/{return_id}/cancel")
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "cancelled"
+
+    elig = client.get("/orders/BK-10234/eligibility", params={"item_title": "Project Hail Mary"})
+    assert elig.json()["eligible"] is True
+
+
+def test_cancel_return_unknown_return_id():
+    resp = client.post("/orders/BK-10234/returns/RT-9999/cancel")
+    assert resp.status_code == 422
+    assert resp.json()["detail"]["error"] == "not_found"
+
+
+def test_cancel_return_twice_fails_second_time():
+    created = client.post("/orders/BK-10234/returns", json={"item_title": "Project Hail Mary", "reason": "N/A"})
+    return_id = created.json()["return_id"]
+    client.post(f"/orders/BK-10234/returns/{return_id}/cancel")
+
+    resp = client.post(f"/orders/BK-10234/returns/{return_id}/cancel")
+    assert resp.status_code == 422
+    assert resp.json()["detail"]["error"] == "already_cancelled"
+
+
 def test_create_return_unknown_order():
     resp = client.post("/orders/BK-99999/returns", json={"item_title": "X", "reason": "N/A"})
     assert resp.status_code == 422

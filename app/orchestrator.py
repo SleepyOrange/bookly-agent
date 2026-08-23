@@ -5,6 +5,7 @@ actions / handoff layers and feed the results back, until the model produces
 a final reply or we hit a safety cap on tool iterations.
 """
 import json
+import logging
 import os
 
 from anthropic import Anthropic
@@ -12,6 +13,8 @@ from anthropic import Anthropic
 from app import actions, handoff, knowledge, memory
 from app.memory import Session
 from app.prompts import SYSTEM_PROMPT
+
+logger = logging.getLogger("bookly.orchestrator")
 
 MODEL = os.environ.get("BOOKLY_MODEL", "claude-sonnet-5")
 MAX_TOOL_ITERATIONS = 6
@@ -35,13 +38,26 @@ def _get_client() -> Anthropic:
 def _run_tool(name: str, tool_input: dict) -> dict:
     fn = DISPATCH.get(name)
     if not fn:
+        # The model asked for a tool that isn't registered -- a schema drift
+        # bug (TOOLS/DISPATCH out of sync), not a customer-facing failure.
+        logger.warning("Model requested unknown tool %r with input %r", name, tool_input)
         return {"error": "unknown_tool", "message": f"No such tool: {name}"}
     try:
         return fn(**tool_input)
     except TypeError as e:
+        # Usually a schema/signature mismatch (model passed args the function
+        # doesn't accept) -- worth a log line to catch drift early, but not
+        # a full traceback since it's an expected, recoverable shape.
+        logger.warning("Tool %r called with bad arguments %r: %s", name, tool_input, e)
         return {"error": "bad_arguments", "message": str(e)}
-    except Exception as e:  # defensive: never let a tool crash the conversation
-        return {"error": "tool_error", "message": str(e)}
+    except Exception:
+        # Defensive: never let a tool crash the conversation -- but log the
+        # full traceback here, since this is the ONLY place an unexpected
+        # bug inside a tool would otherwise surface. Without this, the model
+        # just sees an opaque error dict and improvises a reply, and nothing
+        # ever reaches the server logs to debug from.
+        logger.exception("Tool %r raised an unexpected exception with input %r", name, tool_input)
+        return {"error": "tool_error", "message": "Something went wrong completing that action."}
 
 
 def run_turn(session: Session, user_message: str) -> str:

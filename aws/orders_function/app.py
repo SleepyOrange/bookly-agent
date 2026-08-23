@@ -47,6 +47,8 @@ def _eligibility(order, item_title=None):
             "eligible": False,
             "reason": f"Order is currently '{order['status']}' and hasn't been delivered yet, so it isn't eligible for return (it can still be cancelled if not yet shipped -- escalate if needed).",
         }
+    if not item_title and len(order["items"]) == 1:
+        item_title = order["items"][0]["title"]
     if item_title:
         item = next((i for i in order["items"] if i["title"] == item_title), None)
         if not item:

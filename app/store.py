@@ -159,6 +159,28 @@ def _create_return_primary(order_id: str, item_title: str, reason: str):
     return resp.json()
 
 
+def cancel_return(order_id: str, return_id: str):
+    order_id = order_id.strip().upper()
+    result = _cancel_return_primary(order_id, return_id)
+    if ENABLE_FALLBACK and _is_unavailable(result):
+        logger.warning("Primary order service unavailable; falling back to local mock for %s", order_id)
+        return fallback_store.cancel_return(order_id, return_id)
+    return result
+
+
+def _cancel_return_primary(order_id: str, return_id: str):
+    if TRANSPORT == "mcp":
+        return mcp_client.call_tool("cancel_return", {"order_id": order_id, "return_id": return_id})
+    try:
+        resp = _get_client().post(f"/orders/{order_id}/returns/{return_id}/cancel")
+    except httpx.RequestError as exc:
+        return _unavailable(exc)
+    if resp.status_code == 422:
+        return resp.json()["detail"]
+    resp.raise_for_status()
+    return resp.json()
+
+
 def search_policy(query: str):
     """Returns (matches, err). matches is a list of {"text", "score"} dicts,
     most relevant first -- real semantic retrieval against a Bedrock

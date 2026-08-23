@@ -52,6 +52,14 @@ def post_return(order_id: str, body: ReturnRequest):
     return result
 
 
+@app.post("/orders/{order_id}/returns/{return_id}/cancel")
+def post_cancel_return(order_id: str, return_id: str):
+    result = data_store.cancel_return(order_id, return_id)
+    if "error" in result:
+        raise HTTPException(status_code=422, detail=result)
+    return result
+
+
 @app.get("/faq")
 def search_faq(q: str = Query(..., min_length=1)):
     matches = data_store.search_policy(q)

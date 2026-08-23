@@ -63,6 +63,14 @@ def create_return(order_id: str, item_title: str, reason: str) -> dict:
 
 
 @mcp.tool()
+def cancel_return(order_id: str, return_id: str) -> dict:
+    """Cancel a previously-initiated return (voids the label, no refund
+    issued), as long as it hasn't already been cancelled or processed.
+    Fails with error='not_found' or error='not_cancellable' as appropriate."""
+    return data_store.cancel_return(order_id, return_id)
+
+
+@mcp.tool()
 def search_policy(query: str) -> dict:
     """Search Bookly's FAQ/policy content with a free-text question. Returns
     ranked matches, or error='no_match' if nothing relevant was found."""

@@ -59,6 +59,49 @@ def test_initiate_return_unknown_item():
     assert result["error"] == "not_eligible"
 
 
+def test_cancel_return_success_reopens_eligibility():
+    initiated = actions.initiate_return(
+        "BK-10234", "alice@example.com", "Project Hail Mary", "Changed my mind"
+    )
+    result = actions.cancel_return("BK-10234", "alice@example.com", initiated["return_id"])
+    assert result["status"] == "Return cancelled"
+
+    # the item is back on the order and eligible again, not stuck "returned"
+    elig = actions.check_return_eligibility("BK-10234", "alice@example.com", "Project Hail Mary")
+    assert elig["eligible"] is True
+
+
+def test_cancel_return_wrong_identity_blocked():
+    initiated = actions.initiate_return(
+        "BK-10234", "alice@example.com", "Project Hail Mary", "Changed my mind"
+    )
+    result = actions.cancel_return("BK-10234", "not-alice@example.com", initiated["return_id"])
+    assert result["error"] == "identity_mismatch"
+
+
+def test_cancel_return_unknown_return_id():
+    result = actions.cancel_return("BK-10234", "alice@example.com", "RT-9999")
+    assert result["error"] == "not_found"
+
+
+def test_cancel_return_wrong_order_for_return_id():
+    initiated = actions.initiate_return(
+        "BK-10234", "alice@example.com", "Project Hail Mary", "Changed my mind"
+    )
+    # BK-11020 is a real, verifiable order, but the return_id belongs to BK-10234
+    result = actions.cancel_return("BK-11020", "bob@example.com", initiated["return_id"])
+    assert result["error"] == "not_found"
+
+
+def test_cancel_return_twice_fails_second_time():
+    initiated = actions.initiate_return(
+        "BK-10234", "alice@example.com", "Project Hail Mary", "Changed my mind"
+    )
+    actions.cancel_return("BK-10234", "alice@example.com", initiated["return_id"])
+    result = actions.cancel_return("BK-10234", "alice@example.com", initiated["return_id"])
+    assert result["error"] == "already_cancelled"
+
+
 def test_send_password_reset_masks_email():
     result = actions.send_password_reset("alice@example.com")
     assert "a***e@example.com" in result["message"]
@@ -66,6 +109,15 @@ def test_send_password_reset_masks_email():
 
 def test_ebook_not_eligible_for_return():
     result = actions.check_return_eligibility("BK-12010", "alice@example.com", "Digital Fortress")
+    assert result["eligible"] is False
+    assert "final sale" in result["reason"]
+
+
+def test_ebook_not_eligible_for_return_without_item_title():
+    """Regression: omitting item_title on a single-item order used to skip
+    the ebook check entirely and report eligible=True, contradicting the
+    rejection initiate_return gave moments later for the same order."""
+    result = actions.check_return_eligibility("BK-12010", "alice@example.com")
     assert result["eligible"] is False
     assert "final sale" in result["reason"]
 

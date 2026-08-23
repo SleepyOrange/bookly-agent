@@ -3,10 +3,11 @@ notifications) and reveal or change customer-specific state. Every action
 here is gated by the guardrails layer's identity check first -- an action
 tool never trusts order_id alone.
 
-Return eligibility and return creation are delegated to store.py, which
-calls the external order-management system (external_service/) -- that
-system owns the business rules for what's returnable, the same way a real
-OMS would. This module stays a thin, presentation-shaping layer on top.
+Return eligibility, return creation, and return cancellation are all
+delegated to store.py, which calls the external order-management system
+(external_service/) -- that system owns the business rules for what's
+returnable (and what's still cancellable), the same way a real OMS would.
+This module stays a thin, presentation-shaping layer on top.
 """
 from app import guardrails, store
 
@@ -63,6 +64,24 @@ TOOLS = [
         },
     },
     {
+        "name": "cancel_return",
+        "description": (
+            "Cancel a return that was already initiated, voiding its return "
+            "label -- only possible before the return has been processed. "
+            "Requires order_id and email for identity verification, plus the "
+            "return_id given when initiate_return was called."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "order_id": {"type": "string"},
+                "email": {"type": "string"},
+                "return_id": {"type": "string", "description": "e.g. RT-1001, from when the return was initiated"},
+            },
+            "required": ["order_id", "email", "return_id"],
+        },
+    },
+    {
         "name": "send_password_reset",
         "description": "Trigger a password reset email to the customer's address on file.",
         "input_schema": {
@@ -111,6 +130,20 @@ def initiate_return(order_id: str, email: str, item_title: str, reason: str):
     }
 
 
+def cancel_return(order_id: str, email: str, return_id: str):
+    order, err = guardrails.verify_identity(order_id, email)
+    if err:
+        return err
+    result = store.cancel_return(order_id, return_id)
+    if "error" in result:
+        return result
+    return {
+        "return_id": result["return_id"],
+        "status": "Return cancelled",
+        "message": f"Return {result['return_id']} for '{result['item_title']}' has been cancelled -- the label is void and no refund will be issued. The item is yours to keep.",
+    }
+
+
 def send_password_reset(email: str):
     return {
         "status": "sent",
@@ -122,5 +155,6 @@ DISPATCH = {
     "lookup_order": lookup_order,
     "check_return_eligibility": check_return_eligibility,
     "initiate_return": initiate_return,
+    "cancel_return": cancel_return,
     "send_password_reset": send_password_reset,
 }

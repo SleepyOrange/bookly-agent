@@ -54,6 +54,8 @@ def eligibility(order_id: str, item_title: str | None = None):
             "eligible": False,
             "reason": f"Order is currently '{order['status']}' and hasn't been delivered yet, so it isn't eligible for return (it can still be cancelled if not yet shipped -- escalate if needed).",
         }
+    if not item_title and len(order["items"]) == 1:
+        item_title = order["items"][0]["title"]
     if item_title:
         item = next((i for i in order["items"] if i["title"] == item_title), None)
         if not item:
@@ -105,6 +107,37 @@ def create_return(order_id: str, item_title: str, reason: str):
         "status": "label_sent",
     }
     RETURNS[return_id] = record
+    return record
+
+
+def cancel_return(order_id: str, return_id: str):
+    """Void a return before it's been processed. RETURNS is keyed by
+    return_id alone, so the order_id cross-check below isn't redundant --
+    without it, anyone who learns/guesses a return_id could cancel a
+    different customer's return. Only "label_sent" is cancellable: once a
+    return moves past that (refunded, received, etc. -- not modeled yet,
+    see README), reversing it would mean also reversing a real refund, which
+    this stand-in doesn't attempt.
+    """
+    order = find_order(order_id)
+    if not order:
+        return {"error": "not_found", "message": f"No order found with ID {order_id}."}
+
+    record = RETURNS.get(return_id)
+    if not record or record["order_id"].strip().upper() != order_id.strip().upper():
+        return {"error": "not_found", "message": f"No return found with ID {return_id} on order {order_id}."}
+    if record["status"] == "cancelled":
+        return {"error": "already_cancelled", "message": f"Return {return_id} was already cancelled."}
+    if record["status"] != "label_sent":
+        return {
+            "error": "not_cancellable",
+            "message": f"Return {return_id} can no longer be cancelled (status: {record['status']}).",
+        }
+
+    item = next((i for i in order["items"] if i["title"] == record["item_title"]), None)
+    if item:
+        item["returned"] = False  # reopens eligibility, mirroring a voided label
+    record["status"] = "cancelled"
     return record
 
 
