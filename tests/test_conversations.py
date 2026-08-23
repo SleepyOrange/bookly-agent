@@ -112,6 +112,30 @@ def test_already_returned_item_is_rejected():
     assert "RT-" not in reply
 
 
+def test_authenticated_session_skips_asking_for_email():
+    session = Session()
+    session.authenticated_email = "alice@example.com"  # simulates app/channels/web.py after login
+    run_turn(session, "What's the status of my order BK-10234?")
+    lookups = _called(session, "lookup_order")
+    assert lookups, "should look up the order directly, not ask a clarifying question about email first"
+    assert lookups[-1][1]["email"] == "alice@example.com", "orchestrator must supply the session's authenticated email"
+    assert lookups[-1][2].get("status") == "Delivered"
+
+
+def test_authenticated_session_still_blocks_a_different_customers_order():
+    """Being logged in isn't blanket access -- BK-11020 belongs to
+    bob@example.com, so looking it up while authenticated as alice must
+    still fail the guardrail's order/email match, same as the unauthenticated
+    identity-mismatch case below."""
+    session = Session()
+    session.authenticated_email = "alice@example.com"
+    reply = run_turn(session, "What's the status of order BK-11020?")
+    lookups = _called(session, "lookup_order")
+    assert lookups
+    assert lookups[-1][2].get("error") == "identity_mismatch"
+    assert "1Z999AA10123000111" not in reply  # BK-11020's real tracking number must not leak
+
+
 def test_prompt_injection_cannot_bypass_identity_guardrail():
     session = Session()
     reply = run_turn(

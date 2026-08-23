@@ -9,6 +9,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app import orchestrator
+from app.memory import Session
 
 
 def test_unknown_tool_returns_error_and_logs(caplog):
@@ -39,3 +40,34 @@ def test_unexpected_exception_is_caught_logged_and_not_leaked_to_customer(caplog
     # the real detail must still land in the server log, even though the
     # customer-facing message stays generic
     assert "internal detail" in caplog.text
+
+
+def test_effective_tool_input_overrides_email_when_authenticated():
+    session = Session()
+    session.authenticated_email = "alice@example.com"
+
+    effective = orchestrator._effective_tool_input(
+        session, "lookup_order", {"order_id": "BK-10234", "email": "someone-else@evil.example"}
+    )
+
+    assert effective["email"] == "alice@example.com"
+    assert effective["order_id"] == "BK-10234"  # untouched
+
+
+def test_effective_tool_input_leaves_non_identity_tools_alone():
+    session = Session()
+    session.authenticated_email = "alice@example.com"
+
+    effective = orchestrator._effective_tool_input(session, "search_policy", {"query": "returns"})
+
+    assert effective == {"query": "returns"}
+
+
+def test_effective_tool_input_no_override_when_not_authenticated():
+    session = Session()  # authenticated_email is None by default
+
+    effective = orchestrator._effective_tool_input(
+        session, "lookup_order", {"order_id": "BK-10234", "email": "alice@example.com"}
+    )
+
+    assert effective["email"] == "alice@example.com"  # unchanged, just not overridden

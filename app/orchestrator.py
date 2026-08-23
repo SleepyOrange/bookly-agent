@@ -35,7 +35,20 @@ def _get_client() -> Anthropic:
     return _client
 
 
+def _effective_tool_input(session: Session, name: str, tool_input: dict) -> dict:
+    """Hard override, not a suggestion: once logged in, the email used for
+    verify_identity() is always the session's authenticated one, regardless
+    of whatever the model passed -- it was told not to ask, but nothing
+    stops a customer message from talking it into passing something else."""
+    if name in actions.IDENTITY_GATED_TOOLS and session.authenticated_email:
+        return {**tool_input, "email": session.authenticated_email}
+    return tool_input
+
+
 def _run_tool(name: str, tool_input: dict) -> dict:
+    """tool_input should already reflect _effective_tool_input -- callers
+    resolve that once and reuse the same dict for memory.update_case_state,
+    so what gets remembered matches what was actually verified."""
     fn = DISPATCH.get(name)
     if not fn:
         # The model asked for a tool that isn't registered -- a schema drift
@@ -81,8 +94,9 @@ def run_turn(session: Session, user_message: str) -> str:
         for block in response.content:
             if block.type != "tool_use":
                 continue
-            result = _run_tool(block.name, block.input)
-            memory.update_case_state(session, block.name, block.input, result)
+            effective_input = _effective_tool_input(session, block.name, block.input)
+            result = _run_tool(block.name, effective_input)
+            memory.update_case_state(session, block.name, effective_input, result)
             tool_results.append(
                 {
                     "type": "tool_result",

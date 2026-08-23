@@ -70,7 +70,14 @@
   function ensureGreeting() {
     if (greeted) return;
     greeted = true;
-    addBubble("agent", "Hi, I'm Bookly Support. Ask me about an order, a return, or a policy question -- how can I help?");
+    // window.BooklyAuth is optional -- auth.js may not be included on every
+    // host page (e.g. the bare /chat page), so this degrades to the
+    // generic greeting rather than requiring it.
+    const user = window.BooklyAuth && window.BooklyAuth.currentUser();
+    const greeting = user
+      ? `Hi ${user.name.split(" ")[0]}, I'm Bookly Support -- you're signed in, so I already know it's you. Ask me about an order, a return, or a policy question.`
+      : "Hi, I'm Bookly Support. Ask me about an order, a return, or a policy question -- how can I help?";
+    addBubble("agent", greeting);
   }
 
   function openPanel() {

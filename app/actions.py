@@ -11,6 +11,12 @@ This module stays a thin, presentation-shaping layer on top.
 """
 from app import guardrails, store
 
+# Every tool here that takes an "email" argument for identity verification.
+# app/orchestrator.py overrides that argument with the session's
+# authenticated_email (when logged in) before dispatch -- a hard, code-level
+# guarantee, not a prompt hint the model could be talked out of following.
+IDENTITY_GATED_TOOLS = {"lookup_order", "check_return_eligibility", "initiate_return", "cancel_return"}
+
 TOOLS = [
     {
         "name": "lookup_order",

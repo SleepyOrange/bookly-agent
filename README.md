@@ -19,7 +19,7 @@ The module layout mirrors how Decagon's own product is organized -- each file
 is one architectural layer, not just a Python convenience grouping:
 
 ```
-app/channels/web.py     Channel layer      chat transport (FastAPI + static UI); cli.py is a 2nd channel
+app/channels/web.py     Channel layer      chat transport (FastAPI + static UI) + mock customer login; cli.py is a 2nd channel
 app/orchestrator.py      Orchestration      the tool-use loop against the Anthropic Messages API
 app/memory.py             Memory/Session     transcript + verified case_state (order_id/email) per conversation
 app/knowledge.py          Knowledge          search_policy tool -- real-time semantic search against the external FAQ system
@@ -98,6 +98,46 @@ injection or model mistake can bypass, since it runs outside the LLM's
 control entirely).
 
 Full rationale and trade-offs are in the pitch deck.
+
+### Login
+
+The original identity model asked the customer to re-type their order ID
+and email into chat on every conversation -- email-as-a-shared-secret, and
+a friction point flagged from the start in **Known limitations**, below.
+`app/channels/web.py` now adds a real customer login on top of the
+storefront: once signed in, the chat widget already knows who's talking,
+and never asks for an email again.
+
+This is a **mock** login on purpose (any password is accepted for a known
+account -- `data/customers.json` has `alice@example.com` / `bob@example.com`,
+matching the seeded orders) -- building real password hashing/verification
+wasn't the point of this exercise, and a demo login shouldn't pretend
+otherwise. What *is* real: the session mechanism itself. `POST /api/login`
+issues a random opaque token (`secrets.token_urlsafe`), stored server-side
+in `AUTH_SESSIONS` and set as an `HttpOnly` cookie -- the same shape a real
+session would take, just without a real credential check behind it.
+
+The interesting design decision is what happens *after* login, and it
+deliberately does **not** relax the existing hard guardrail:
+- `app/memory.py`'s `Session` gains `authenticated_email`, set by the web
+  channel from the login cookie on every `/api/chat` call (re-resolved each
+  turn, so logging out mid-conversation takes effect on the very next
+  message, not just new sessions).
+- The system prompt tells the model it doesn't need to ask for the email --
+  but that's just a hint, and hints can be argued with. The actual
+  enforcement is in `app/orchestrator.py`'s `_effective_tool_input`: for
+  every identity-gated tool call (`lookup_order`, `check_return_eligibility`,
+  `initiate_return`, `cancel_return`), the `email` argument is overwritten
+  server-side with the session's authenticated email, **regardless of what
+  the model passed**. A prompt injection in the chat can't make the agent
+  verify against a different email once logged in, because the model's
+  choice of `email` argument is never actually used for that decision.
+- `guardrails.verify_identity()` itself is completely unchanged -- it still
+  compares the order's `customer_email` against whatever email it's given,
+  it just now reliably gets a trustworthy one. Being logged in as Alice
+  still doesn't unlock Bob's orders; it only means Alice's own orders no
+  longer require typing her email first. Verified live in
+  `tests/test_conversations.py::test_authenticated_session_still_blocks_a_different_customers_order`.
 
 ### MCP
 
@@ -415,10 +455,10 @@ requests from different customer sessions.
 
 ### Full scenario list
 
-Every test, grouped by what it actually exercises. **122 total: 93 fast**
+Every test, grouped by what it actually exercises. **143 total: 106 fast**
 (Python, no network -- 2 of these are live Salesforce tests that skip by
-default and only run on explicit opt-in, see below) **+ 11 live** (real
-Anthropic API calls) **+ 18 browser** (real headless Chromium, not a DOM
+default and only run on explicit opt-in, see below) **+ 13 live** (real
+Anthropic API calls) **+ 24 browser** (real headless Chromium, not a DOM
 simulator).
 
 **Tool & business logic** -- `tests/test_actions.py` (20, fast)
@@ -452,7 +492,7 @@ simulator).
 - Identity verification blocks a non-existent order
 - Email masking produces the expected partial format
 
-**Tool-dispatch error handling** -- `tests/test_orchestrator.py` (3, fast)
+**Tool-dispatch error handling & login override** -- `tests/test_orchestrator.py` (6, fast)
 - An unknown tool name is caught, logged, and returned as a clean `unknown_tool` error
   instead of crashing the turn
 - A tool called with arguments its function doesn't accept is caught and logged as
@@ -460,6 +500,10 @@ simulator).
 - An unexpected exception inside a tool is caught, logged with a full traceback
   (`logger.exception`, `bookly.orchestrator`), and never leaks the raw exception text
   into the customer-facing reply -- the model only ever sees a generic `tool_error`
+- `_effective_tool_input` overwrites the `email` argument with the session's
+  authenticated email for identity-gated tools, regardless of what the model passed
+- Non-identity tools (e.g. `search_policy`) are left completely untouched by the override
+- With no authenticated session, the model-supplied email passes through unchanged
 
 **Knowledge / policy search** -- `tests/test_knowledge.py` (2, fast)
 - A relevant query returns matching policy text
@@ -470,7 +514,7 @@ simulator).
 - The related order ID is included in the Case description
 - The mocked Case object's fields match Salesforce's real field names
 
-**Web channel** -- `tests/test_web_channel.py` (8, fast)
+**Web channel & login** -- `tests/test_web_channel.py` (18, fast)
 - Storefront page is served
 - Standalone chat page is served
 - Contact page is served
@@ -479,6 +523,17 @@ simulator).
 - A new session is created when none is given
 - The same `Session` object is reused across turns, not recreated
 - Resetting a session removes it from the session store
+- Login with a known email sets the auth cookie and returns the customer
+- Login accepts any password for a known account (the deliberate mock -- see README's Login section)
+- Login with an unknown email is rejected with `invalid_credentials`
+- Login email matching is case-insensitive
+- `/api/me` without a login cookie returns 401
+- `/api/me` after login returns the signed-in customer
+- Logout clears the session; `/api/me` goes back to 401 afterward
+- `/api/chat` picks up `authenticated_email` on the `Session` from the login cookie
+- `/api/chat` leaves `authenticated_email` as `None` when nobody's logged in
+- `authenticated_email` is re-resolved every turn -- logging out mid-conversation
+  is reflected on the very next message, not just future chat sessions
 
 **External service REST API** -- `tests/test_external_service.py` (13, fast)
 - Health check responds
@@ -551,7 +606,7 @@ simulator).
 - The query text is passed through to Bedrock correctly
 - No results returns 404/`no_match`
 
-**Live conversation evals** -- `tests/test_conversations.py` (11, real model calls)
+**Live conversation evals** -- `tests/test_conversations.py` (13, real model calls)
 - Asks a clarifying question before any tool call, rather than guessing
 - Full multi-turn return flow: clarify -> identify -> confirm reason -> tool call
 - A wrong email on a real order ID is blocked; no order details leak
@@ -559,12 +614,16 @@ simulator).
 - A fraud claim triggers escalation, and the reply quotes the real case number
 - E-books are correctly refused for return
 - An already-returned item is correctly refused
+- A logged-in session (`Session.authenticated_email` set, simulating post-login) looks up
+  its own order directly, with no clarifying question about email first
+- A logged-in session still can't access a different customer's order -- login isn't
+  blanket access, the guardrail still runs against the real order/email match
 - Prompt injection in the main message can't bypass the identity guardrail
 - Prompt injection embedded in a data field (order ID) can't leak real data
 - A direct system-prompt-extraction attempt doesn't surface internal instructions
 - Injection via the return-reason field can't leak an unrelated customer's email
 
-**Frontend, real headless Chromium** -- `frontend-tests/specs/` (18, browser)
+**Frontend, real headless Chromium** -- `frontend-tests/specs/` (24, browser)
 
 *Storefront (5)*
 - Catalog loads with all books
@@ -590,6 +649,16 @@ simulator).
 - The confirmation panel offers a path into the widget
 - A footer deep-link on this page also pre-fills and sends
 
+*Login (6)*
+- Signed out by default -- the "Sign in" link is visible in the nav
+- An unknown email shows an error and leaves the modal open
+- Signing in with any password for a known account updates the nav and
+  survives a full page reload (real cookie, not just in-memory UI state)
+- Signing out reverts the nav, and the reload check confirms the cookie was
+  actually cleared, not just the DOM
+- The chat widget's greeting personalizes with the signed-in customer's name
+- Login works the same way on the contact page, not just the storefront
+
 ## Try it
 
 The mock DB has two customers and 7 orders covering the required flows plus
@@ -604,6 +673,15 @@ edge cases a grader is likely to probe:
 | `BK-11020` | bob@example.com | Delivered | past the 30-day return window |
 | `BK-11500` | bob@example.com | Processing | not yet shipped |
 | `BK-12100` | bob@example.com | Cancelled | nothing to return |
+
+**Fastest way to see the login enhancement:** open the storefront, click
+"Sign in" in the nav, and log in as `alice@example.com` with any password
+(there's a hint on the login form itself). Open the chat widget -- the
+greeting already uses her name. Ask `"what's the status of my order
+BK-10234?"` with no email in the message at all; it answers directly. Then
+ask about `BK-11020` (that one's Bob's) -- still blocked, because logging in
+doesn't grant blanket access, it just means Alice's own identity no longer
+needs re-typing.
 
 Suggested conversation to exercise all three required behaviors in one thread
 (this is a real transcript captured from a live run, not a script):
@@ -663,10 +741,22 @@ of what the model was told to believe.
 ## Known limitations / what I'd change with more time
 
 See the last slide of the pitch deck -- short version: persistent session
-storage, real auth instead of email-as-secret, streaming responses, and a
-larger/CI-gated version of the conversation-eval suite (broader scenario
-coverage, run on every prompt change, ideally with a model-graded judge for
-subjective quality, not just tool-call assertions).
+storage, streaming responses, and a larger/CI-gated version of the
+conversation-eval suite (broader scenario coverage, run on every prompt
+change, ideally with a model-graded judge for subjective quality, not just
+tool-call assertions).
+
+"Real auth instead of email-as-secret" (previously listed here) is partly
+addressed now -- see **Login**, above: there's a real customer login and a
+real session cookie, and the identity guardrail now trusts that session
+instead of re-asking for an email every conversation. What's still mock,
+deliberately, for this exercise: password verification (any password is
+accepted for a known account -- no hashing, no real credential check),
+session expiry (`AUTH_SESSIONS` tokens live forever until the process
+restarts), and there's no signup flow, only the two seeded accounts. A real
+deployment would add bcrypt/argon2-hashed passwords (or delegate to a real
+IdP entirely -- Auth0, Cognito, etc.), signed/expiring sessions, and CSRF
+protection on the cookie-based endpoints.
 
 On the integration specifically, the natural next step (tracked as the
 reason for the `bookly_integration` branch) is swapping `external_service/`'s
