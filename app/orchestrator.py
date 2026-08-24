@@ -19,6 +19,11 @@ logger = logging.getLogger("bookly.orchestrator")
 MODEL = os.environ.get("BOOKLY_MODEL", "claude-sonnet-5")
 MAX_TOOL_ITERATIONS = 6
 
+# Prepended to the first reply of a conversation where an authenticated
+# customer's order gets verified -- see run_turn's needs_verification_
+# confirmation for why this is code, not a prompt instruction.
+VERIFICATION_CONFIRMATION = "I've confirmed this order is linked to your account."
+
 # The orchestrator doesn't know or care which layer a tool lives in -- it
 # just needs a flat schema list + dispatch table. The layering is for
 # humans (and org boundaries in a real deployment), not the model.
@@ -76,6 +81,15 @@ def _run_tool(name: str, tool_input: dict) -> dict:
 def run_turn(session: Session, user_message: str) -> str:
     session.messages.append({"role": "user", "content": user_message})
     client = _get_client()
+    # Captured before any tool calls this turn: true only for an
+    # authenticated session that hasn't verified an order yet this
+    # conversation. Prompting the model to say so itself proved unreliable
+    # across several attempts -- it kept jumping straight to order details
+    # regardless of how the instruction was worded or where it sat in the
+    # prompt. Same "don't trust the model to comply, guarantee it in code"
+    # reasoning as the identity override below, just for a trust signal
+    # instead of a security check.
+    needs_verification_confirmation = bool(session.authenticated_email) and not session.case_state
 
     for _ in range(MAX_TOOL_ITERATIONS):
         response = client.messages.create(
@@ -88,7 +102,10 @@ def run_turn(session: Session, user_message: str) -> str:
         session.messages.append({"role": "assistant", "content": response.content})
 
         if response.stop_reason != "tool_use":
-            return "".join(block.text for block in response.content if block.type == "text")
+            reply = "".join(block.text for block in response.content if block.type == "text")
+            if needs_verification_confirmation and session.case_state:
+                reply = f"{VERIFICATION_CONFIRMATION} {reply}"
+            return reply
 
         tool_results = []
         for block in response.content:

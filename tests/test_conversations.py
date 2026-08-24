@@ -122,6 +122,21 @@ def test_authenticated_session_skips_asking_for_email():
     assert lookups[-1][2].get("status") == "Delivered"
 
 
+def test_authenticated_session_confirms_verification_before_sharing_order_details():
+    """The customer never typed an email for them to see get checked, since
+    it came from their login session -- so the first lookup each
+    conversation should say out loud that the order was confirmed to
+    belong to their account, not leave that invisible."""
+    session = Session()
+    session.authenticated_email = "alice@example.com"
+    reply = run_turn(session, "What's the status of my order BK-10234?")
+    lowered = reply.lower()
+    assert any(
+        phrase in lowered
+        for phrase in ("confirmed", "verified", "linked to your account", "matches your account")
+    ), f"expected an explicit verification confirmation before order details, got: {reply!r}"
+
+
 def test_authenticated_session_still_blocks_a_different_customers_order():
     """Being logged in isn't blanket access -- BK-11020 belongs to
     bob@example.com, so looking it up while authenticated as alice must
@@ -134,6 +149,18 @@ def test_authenticated_session_still_blocks_a_different_customers_order():
     assert lookups
     assert lookups[-1][2].get("error") == "identity_mismatch"
     assert "1Z999AA10123000111" not in reply  # BK-11020's real tracking number must not leak
+
+
+def test_authenticated_session_does_not_repeat_verification_confirmation_every_turn():
+    """The confirmation is a one-time trust signal for the first lookup,
+    not something that should get repeated on every follow-up in the same
+    conversation -- that would read as robotic, not reassuring."""
+    session = Session()
+    session.authenticated_email = "alice@example.com"
+    run_turn(session, "What's the status of my order BK-10234?")
+    second_reply = run_turn(session, "And is it eligible for a return?")
+    lowered = second_reply.lower()
+    assert "confirmed this order is linked to your account" not in lowered
 
 
 def test_prompt_injection_cannot_bypass_identity_guardrail():
