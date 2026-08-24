@@ -18,7 +18,7 @@
     <div class="auth-card" role="dialog" aria-label="Sign in to Bookly">
       <button type="button" class="auth-close" id="auth-close" aria-label="Close">&times;</button>
       <h2>Sign in</h2>
-      <p class="auth-sub">So Bookly Support already knows who you are -- no more repeating your order ID and email in chat.</p>
+      <p class="auth-sub">So Bookly Concierge already knows who you are -- no more repeating your order ID and email in chat.</p>
       <div class="auth-error" id="auth-error"></div>
       <form id="auth-form">
         <label for="auth-email">Email</label>

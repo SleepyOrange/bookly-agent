@@ -25,6 +25,9 @@ def stub_run_turn(session, message):
         return "Standard shipping is £4.99 (free over £35). Express is £12.99."
     if "return" in lowered and "policy" in lowered:
         return "You can return items within 30 days of delivery."
+    if "recommend" in lowered:
+        # Names a real catalog title, for the product-card rendering test.
+        return "You'd probably enjoy Project Hail Mary by Andy Weir -- it's one of our most-returned-for-a-second-copy titles."
     if "order" in lowered:
         return "Could you share your order ID and the email on the order?"
     return f"Stub reply to: {message}"

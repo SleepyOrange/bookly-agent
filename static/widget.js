@@ -1,4 +1,4 @@
-/* Bookly Support widget. Drop this + widget.css onto any page and it wires
+/* Bookly Concierge widget. Drop this + widget.css onto any page and it wires
  * itself up against POST /api/chat -- the same endpoint the standalone
  * /chat page and the CLI ultimately go through (app/orchestrator.py).
  * No page-specific code required beyond including these two files.
@@ -17,10 +17,10 @@
       <button class="bw-nudge-close" id="bw-nudge-close" aria-label="Dismiss">&times;</button>
       Hi! Need help with an order, a return, or a policy question?
     </div>
-    <div class="bw-panel" role="dialog" aria-label="Bookly Support chat" aria-hidden="true">
+    <div class="bw-panel" role="dialog" aria-label="Bookly Concierge chat" aria-hidden="true">
       <div class="bw-header">
         <div class="bw-header-title">
-          <strong>Bookly Support</strong>
+          <strong>Bookly Concierge</strong>
           <span class="bw-status"><span class="bw-status-dot"></span>Usually replies in seconds</span>
         </div>
         <button class="bw-close" id="bw-close" aria-label="Close chat">&times;</button>
@@ -36,7 +36,7 @@
         <button type="submit">Send</button>
       </form>
     </div>
-    <button class="bw-launcher" id="bw-launcher" aria-haspopup="dialog" aria-expanded="false" aria-label="Open Bookly Support chat">
+    <button class="bw-launcher" id="bw-launcher" aria-haspopup="dialog" aria-expanded="false" aria-label="Open Bookly Concierge chat">
       ${CHAT_ICON}${CLOSE_ICON}
     </button>
   `;
@@ -55,6 +55,16 @@
   let sessionId = sessionStorage.getItem("bookly_session_id") || null;
   let greeted = false;
 
+  // Fetched once, best-effort -- if this fails, the chat still works fine,
+  // it just never shows product cards. Same catalog data the storefront
+  // already renders, so book titles named in a reply have real cover art
+  // to point at, not a description asking you to imagine it.
+  const catalogByTitle = new Map();
+  fetch("/api/catalog")
+    .then((res) => (res.ok ? res.json() : []))
+    .then((books) => books.forEach((b) => catalogByTitle.set(b.title, b)))
+    .catch(() => {});
+
   function addBubble(role, text, pending) {
     const row = document.createElement("div");
     row.className = "bw-row " + role;
@@ -67,6 +77,39 @@
     return bubble;
   }
 
+  function addProductCard(book) {
+    const row = document.createElement("div");
+    row.className = "bw-row agent";
+    const card = document.createElement("div");
+    card.className = "bw-product-card";
+
+    const img = document.createElement("img");
+    img.src = book.cover_url;
+    img.alt = "";
+    card.appendChild(img);
+
+    const info = document.createElement("div");
+    info.className = "bw-product-info";
+    const titleEl = document.createElement("span");
+    titleEl.className = "bw-product-title";
+    titleEl.textContent = book.title;
+    const authorEl = document.createElement("span");
+    authorEl.className = "bw-product-author";
+    authorEl.textContent = book.author;
+    info.append(titleEl, authorEl);
+    card.appendChild(info);
+
+    row.appendChild(card);
+    log.appendChild(row);
+    log.scrollTop = log.scrollHeight;
+  }
+
+  function showMentionedProducts(replyText) {
+    catalogByTitle.forEach((book, title) => {
+      if (replyText.includes(title)) addProductCard(book);
+    });
+  }
+
   function ensureGreeting() {
     if (greeted) return;
     greeted = true;
@@ -75,8 +118,8 @@
     // generic greeting rather than requiring it.
     const user = window.BooklyAuth && window.BooklyAuth.currentUser();
     const greeting = user
-      ? `Hi ${user.name.split(" ")[0]}, I'm Bookly Support -- you're signed in, so I already know it's you. Ask me about an order, a return, or a policy question.`
-      : "Hi, I'm Bookly Support. Ask me about an order, a return, or a policy question -- how can I help?";
+      ? `Hi ${user.name.split(" ")[0]}, I'm Bookly Concierge -- you're signed in, so I already know it's you. Ask me about an order, a return, or a policy question.`
+      : "Hi, I'm Bookly Concierge. Ask me about an order, a return, or a policy question -- how can I help?";
     addBubble("agent", greeting);
   }
 
@@ -119,6 +162,7 @@
       sessionStorage.setItem("bookly_session_id", sessionId);
       pending.textContent = data.reply;
       pending.classList.remove("pending");
+      showMentionedProducts(data.reply);
     } catch (err) {
       pending.textContent = "Something went wrong reaching support -- please try again in a moment.";
       pending.classList.remove("pending");

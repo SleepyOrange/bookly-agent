@@ -1,4 +1,4 @@
-/* Bookly Support widget -- self-contained, brand-token-driven so it can be
+/* Bookly Concierge widget -- self-contained, brand-token-driven so it can be
    dropped onto any page that defines the same --bookly-* custom properties
    (falls back to sane defaults if the host page doesn't). */
 #bookly-widget {
@@ -9,6 +9,7 @@
   --bw-accent-ink: #ffffff;
   --bw-bubble-agent: var(--bookly-surface-2, #ebe9e1);
   --bw-border: var(--bookly-rule, #ddd9cc);
+  --bw-font-display: var(--bookly-font-display, Georgia, serif);
   --bw-shadow: 0 12px 32px rgba(20, 20, 18, 0.18), 0 2px 8px rgba(20, 20, 18, 0.08);
   position: fixed;
   right: 22px;
@@ -80,9 +81,9 @@
   position: absolute;
   right: 0;
   bottom: 86px;
-  width: 380px;
+  width: 440px;
   max-width: calc(100vw - 44px);
-  height: 560px;
+  height: 660px;
   max-height: calc(100vh - 120px);
   background: var(--bw-bg);
   border: 1px solid var(--bw-border);
@@ -108,7 +109,7 @@
   flex: none;
 }
 .bw-header-title { display: flex; flex-direction: column; gap: 2px; }
-.bw-header-title strong { font-size: 15px; color: var(--bw-ink); }
+.bw-header-title strong { font-family: var(--bw-font-display); font-weight: 600; font-size: 16.5px; color: var(--bw-ink); }
 .bw-status { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--bw-muted); }
 .bw-status-dot { width: 7px; height: 7px; border-radius: 50%; background: #3f9d5f; flex: none; }
 .bw-close {
@@ -142,6 +143,37 @@
 .bw-row.user .bw-bubble { background: var(--bw-ink); color: #fff; border-bottom-right-radius: 4px; }
 .bw-row.agent .bw-bubble { background: var(--bw-bubble-agent); color: var(--bw-ink); border-bottom-left-radius: 4px; }
 .bw-row.agent .bw-bubble.pending { color: var(--bw-muted); font-style: italic; }
+
+.bw-product-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 82%;
+  margin-top: 2px;
+  padding: 8px 10px;
+  background: var(--bw-bg);
+  border: 1px solid var(--bw-border);
+  border-radius: 12px;
+}
+.bw-product-card img {
+  width: 38px;
+  height: 54px;
+  object-fit: cover;
+  border-radius: 4px;
+  flex: none;
+  display: block;
+}
+.bw-product-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.bw-product-title {
+  font-family: var(--bw-font-display);
+  font-weight: 600;
+  font-size: 12.5px;
+  color: var(--bw-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bw-product-author { font-size: 10.5px; color: var(--bw-muted); }
 
 .bw-suggestions { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 18px 12px; flex: none; }
 .bw-suggestions button {

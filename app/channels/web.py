@@ -22,7 +22,7 @@ from app import store
 from app.memory import Session
 from app.orchestrator import run_turn
 
-app = FastAPI(title="Bookly Support Agent")
+app = FastAPI(title="Bookly Concierge Agent")
 
 STATIC_DIR = Path(__file__).resolve().parent.parent.parent / "static"
 DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"

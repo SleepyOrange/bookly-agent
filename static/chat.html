@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Bookly Support</title>
+<title>Bookly Concierge</title>
 <style>
   :root {
     --bg: #f6f4f0;
@@ -124,7 +124,7 @@
 <body>
 <div class="app">
   <header>
-    <h1>Bookly Support</h1>
+    <h1>Bookly Concierge</h1>
     <p>Order status &middot; returns &amp; refunds &middot; shipping, password &amp; policy questions</p>
   </header>
   <div id="log"></div>
@@ -159,7 +159,7 @@ function addBubble(role, text, pending=false) {
   return bubble;
 }
 
-addBubble('agent', "Hi, I'm Bookly Support. Ask me about an order, a return, or a policy question -- how can I help?");
+addBubble('agent', "Hi, I'm Bookly Concierge. Ask me about an order, a return, or a policy question -- how can I help?");
 
 async function sendMessage(text) {
   if (!text.trim()) return;

@@ -55,9 +55,34 @@ test('footer deep-link opens the widget and sends the question automatically', a
   await expect(page.locator('.bw-row.agent .bw-bubble').last()).toContainText('order ID', { timeout: 10000 });
 });
 
-test('nav "Support" link opens the widget without sending a message', async ({ page }) => {
+test('a reply naming a real catalog title shows its product card, with cover art', async ({ page }) => {
   await page.goto('/');
-  await page.click('nav a:has-text("Support")');
+  await page.click('#bw-launcher');
+  await page.fill('#bw-input', 'what would you recommend?');
+  await page.click('#bw-form button[type=submit]');
+
+  await expect(page.locator('.bw-row.agent .bw-bubble').last()).toContainText('Project Hail Mary', { timeout: 10000 });
+
+  const card = page.locator('.bw-product-card');
+  await expect(card).toBeVisible();
+  await expect(card.locator('.bw-product-title')).toHaveText('Project Hail Mary');
+  await expect(card.locator('.bw-product-author')).toHaveText('Andy Weir');
+  await expect(card.locator('img')).toHaveAttribute('src', '/static/covers/project-hail-mary.jpg');
+});
+
+test('a reply naming no catalog title shows no product card', async ({ page }) => {
+  await page.goto('/');
+  await page.click('#bw-launcher');
+  await page.fill('#bw-input', 'whats your shipping policy');
+  await page.click('#bw-form button[type=submit]');
+
+  await expect(page.locator('.bw-row.agent .bw-bubble').last()).toContainText('£4.99', { timeout: 10000 });
+  await expect(page.locator('.bw-product-card')).toHaveCount(0);
+});
+
+test('nav "Concierge" link opens the widget without sending a message', async ({ page }) => {
+  await page.goto('/');
+  await page.click('nav a:has-text("Concierge")');
   await expect(page.locator('#bookly-widget')).toHaveClass(/open/);
   await expect(page.locator('.bw-row.user')).toHaveCount(0);
 });
