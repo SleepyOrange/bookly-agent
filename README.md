@@ -13,6 +13,27 @@ agent embedded as a floating chat widget (`static/widget.js` + `widget.css`)
 chat page. The widget is channel-agnostic plumbing wrapped around the same
 `POST /api/chat` endpoint the standalone chat page and CLI use.
 
+## Try the live demo
+
+**https://bookly-support-agent-production.up.railway.app**
+
+No setup needed -- open it and use the widget. This deployment is wired to
+real backends, not local fixtures:
+- **Orders/FAQ**: a real AWS deployment (DynamoDB + Lambda behind API
+  Gateway) -- see **AWS deployment**, below.
+- **Escalation**: a real Salesforce org, not the in-memory mock. Cases
+  created from this deployment are tagged `[Public Demo]` in the subject
+  line (`BOOKLY_DEMO_LABEL` env var) so they're distinguishable from real
+  customer cases in the same queue -- see `app/handoff.py`.
+
+Test data to try: order `BK-10234`, email `alice@example.com` (see **Try
+it**, below, for the full table and a suggested conversation).
+
+**Known limitation, stated plainly:** this deployment has no rate limiting
+(a genuine gap -- see **Known limitations**). Please be considerate with it;
+it's a portfolio demo running against a real API key and a real Salesforce
+org, not production infrastructure sized for load.
+
 ## Architecture at a glance
 
 The module layout mirrors how Decagon's own product is organized -- each file
