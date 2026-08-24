@@ -80,6 +80,24 @@ test('a reply naming no catalog title shows no product card', async ({ page }) =
   await expect(page.locator('.bw-product-card')).toHaveCount(0);
 });
 
+test('a product card only stays for the latest reply, not the whole conversation', async ({ page }) => {
+  await page.goto('/');
+  await page.click('#bw-launcher');
+
+  await page.fill('#bw-input', 'what would you recommend?');
+  await page.click('#bw-form button[type=submit]');
+  await expect(page.locator('.bw-product-card')).toHaveCount(1, { timeout: 10000 });
+
+  await page.fill('#bw-input', 'whats your shipping policy');
+  await page.click('#bw-form button[type=submit]');
+  await expect(page.locator('.bw-row.agent .bw-bubble').last()).toContainText('£4.99', { timeout: 10000 });
+
+  // the earlier card is gone, not accumulated -- the chat log still shows
+  // both text replies, just not a stale card from an earlier turn
+  await expect(page.locator('.bw-product-card')).toHaveCount(0);
+  await expect(page.locator('.bw-row.agent .bw-bubble')).toHaveCount(3); // greeting + 2 replies
+});
+
 test('nav "Concierge" link opens the widget without sending a message', async ({ page }) => {
   await page.goto('/');
   await page.click('nav a:has-text("Concierge")');

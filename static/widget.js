@@ -102,11 +102,19 @@
     row.appendChild(card);
     log.appendChild(row);
     log.scrollTop = log.scrollHeight;
+    return row;
   }
 
+  // Only the latest reply's product card(s) stay visible -- each new reply
+  // clears whatever was showing before, rather than accumulating a card per
+  // turn for the life of the conversation.
+  let currentProductRows = [];
+
   function showMentionedProducts(replyText) {
+    currentProductRows.forEach((row) => row.remove());
+    currentProductRows = [];
     catalogByTitle.forEach((book, title) => {
-      if (replyText.includes(title)) addProductCard(book);
+      if (replyText.includes(title)) currentProductRows.push(addProductCard(book));
     });
   }
 
