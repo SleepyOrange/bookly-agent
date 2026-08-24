@@ -112,6 +112,7 @@
 .bw-header-title strong { font-family: var(--bw-font-display); font-weight: 600; font-size: 16.5px; color: var(--bw-ink); }
 .bw-status { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--bw-muted); }
 .bw-status-dot { width: 7px; height: 7px; border-radius: 50%; background: #3f9d5f; flex: none; }
+.bw-header-actions { display: flex; align-items: center; gap: 4px; flex: none; }
 .bw-close {
   border: none;
   background: transparent;
@@ -121,6 +122,18 @@
   cursor: pointer;
   padding: 4px;
 }
+.bw-reset {
+  border: none;
+  background: transparent;
+  color: var(--bw-muted);
+  cursor: pointer;
+  padding: 5px;
+  display: flex;
+  border-radius: 6px;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.bw-reset svg { width: 16px; height: 16px; }
+.bw-reset:hover { background: var(--bw-bubble-agent); color: var(--bw-ink); }
 
 .bw-log {
   flex: 1;

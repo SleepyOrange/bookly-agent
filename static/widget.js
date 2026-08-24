@@ -3,12 +3,14 @@
  * /chat page and the CLI ultimately go through (app/orchestrator.py).
  * No page-specific code required beyond including these two files.
  *
- * Exposes window.BooklyWidget = { open(), sendMessage(text) } so the host
- * page can deep-link into the agent (see the footer links on the storefront).
+ * Exposes window.BooklyWidget = { open(), sendMessage(text), endSession() }
+ * so the host page can deep-link into the agent (see the footer links on
+ * the storefront) or trigger a fresh conversation programmatically.
  */
 (function () {
   const CHAT_ICON = `<svg class="bw-icon-chat" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 12c0-4.42 3.58-8 8-8s8 3.58 8 8-3.58 8-8 8c-1.13 0-2.2-.23-3.18-.66L4 21l1.66-4.82C4.6 14.98 4 13.55 4 12Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>`;
   const CLOSE_ICON = `<svg class="bw-icon-close" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="display:none"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`;
+  const RESET_ICON = `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 12a9 9 0 1 0 2.6-6.3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M3 5v5h5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 
   const root = document.createElement("div");
   root.id = "bookly-widget";
@@ -21,9 +23,12 @@
       <div class="bw-header">
         <div class="bw-header-title">
           <strong>Bookly Concierge</strong>
-          <span class="bw-status"><span class="bw-status-dot"></span>Usually replies in seconds</span>
+          <span class="bw-status"><span class="bw-status-dot"></span><span id="bw-status-text">Usually replies in seconds</span></span>
         </div>
-        <button class="bw-close" id="bw-close" aria-label="Close chat">&times;</button>
+        <div class="bw-header-actions">
+          <button class="bw-reset" id="bw-reset" aria-label="End this conversation and start fresh" title="New conversation">${RESET_ICON}</button>
+          <button class="bw-close" id="bw-close" aria-label="Close chat">&times;</button>
+        </div>
       </div>
       <div class="bw-log" id="bw-log"></div>
       <div class="bw-suggestions" id="bw-suggestions">
@@ -45,12 +50,14 @@
   const launcher = root.querySelector("#bw-launcher");
   const panel = root.querySelector(".bw-panel");
   const closeBtn = root.querySelector("#bw-close");
+  const resetBtn = root.querySelector("#bw-reset");
   const log = root.querySelector("#bw-log");
   const form = root.querySelector("#bw-form");
   const input = root.querySelector("#bw-input");
   const suggestions = root.querySelector("#bw-suggestions");
   const nudge = root.querySelector("#bw-nudge");
   const nudgeClose = root.querySelector("#bw-nudge-close");
+  const statusText = root.querySelector("#bw-status-text");
 
   let sessionId = sessionStorage.getItem("bookly_session_id") || null;
   let greeted = false;
@@ -157,6 +164,36 @@
     addBubble("agent", greeting);
   }
 
+  async function endSession() {
+    const idToReset = sessionId;
+    sessionId = null;
+    sessionStorage.removeItem("bookly_session_id");
+    currentProductRows.forEach((row) => row.remove());
+    currentProductRows = [];
+    log.innerHTML = "";
+    greeted = false;
+    ensureGreeting();
+    if (statusText) {
+      const previous = statusText.textContent;
+      statusText.textContent = "New conversation started";
+      setTimeout(() => {
+        statusText.textContent = previous;
+      }, 2500);
+    }
+    if (idToReset) {
+      try {
+        // Best-effort -- the client-side reset above already happened
+        // regardless, so a network hiccup here doesn't strand the customer
+        // with a chat that looks reset but isn't. The old Session object on
+        // the server (messages, case_state) is simply never referenced
+        // again once its id is gone from sessionStorage either way.
+        await fetch(`/api/reset?session_id=${encodeURIComponent(idToReset)}`, { method: "POST" });
+      } catch (err) {
+        /* best-effort, see above */
+      }
+    }
+  }
+
   function openPanel() {
     root.classList.add("open");
     launcher.setAttribute("aria-expanded", "true");
@@ -208,6 +245,7 @@
 
   launcher.addEventListener("click", togglePanel);
   closeBtn.addEventListener("click", closePanel);
+  resetBtn.addEventListener("click", endSession);
   form.addEventListener("submit", (e) => {
     e.preventDefault();
     sendMessage(input.value);
@@ -241,5 +279,6 @@
     open: openPanel,
     close: closePanel,
     sendMessage: sendMessage,
+    endSession: endSession,
   };
 })();

@@ -17,6 +17,43 @@ test('launcher opens and closes the chat panel', async ({ page }) => {
   await expect(widget).not.toHaveClass(/open/);
 });
 
+test('End session clears the chat log back to a fresh greeting', async ({ page }) => {
+  await page.goto('/');
+  await page.click('#bw-launcher');
+  await page.fill('#bw-input', 'what would you recommend?');
+  await page.click('#bw-form button[type=submit]');
+  await expect(page.locator('.bw-product-card')).toHaveCount(1, { timeout: 10000 });
+  await expect(page.locator('#bw-log .bw-row').first()).toBeVisible();
+  const rowCountBeforeReset = await page.locator('#bw-log .bw-row').count();
+  expect(rowCountBeforeReset).toBeGreaterThan(1); // greeting + user message + reply + card
+
+  await page.click('#bw-reset');
+
+  // back to just the one fresh greeting bubble, and the stale product card is gone too
+  await expect(page.locator('#bw-log .bw-row')).toHaveCount(1);
+  await expect(page.locator('.bw-product-card')).toHaveCount(0);
+  await expect(page.locator('#bw-status-text')).toHaveText('New conversation started');
+});
+
+test('End session actually starts a new server-side session, not just a visual clear', async ({ page }) => {
+  await page.goto('/');
+  await page.click('#bw-launcher');
+  await page.fill('#bw-input', 'whats your shipping policy');
+  await page.click('#bw-form button[type=submit]');
+  const firstSessionId = await page.evaluate(() => sessionStorage.getItem('bookly_session_id'));
+  expect(firstSessionId).toBeTruthy();
+
+  await page.click('#bw-reset');
+  expect(await page.evaluate(() => sessionStorage.getItem('bookly_session_id'))).toBeNull();
+
+  await page.fill('#bw-input', 'whats your shipping policy');
+  await page.click('#bw-form button[type=submit]');
+  await expect(page.locator('.bw-row.agent .bw-bubble').last()).toContainText('£4.99', { timeout: 10000 });
+  const secondSessionId = await page.evaluate(() => sessionStorage.getItem('bookly_session_id'));
+  expect(secondSessionId).toBeTruthy();
+  expect(secondSessionId).not.toBe(firstSessionId);
+});
+
 test('escape key closes the open panel', async ({ page }) => {
   await page.goto('/');
   await page.click('#bw-launcher');
