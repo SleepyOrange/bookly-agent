@@ -15,7 +15,7 @@
   root.innerHTML = `
     <div class="bw-nudge" id="bw-nudge">
       <button class="bw-nudge-close" id="bw-nudge-close" aria-label="Dismiss">&times;</button>
-      Hi! Need help with an order, a return, or a policy question?
+      Need a hand with an order, a return, or anything else?
     </div>
     <div class="bw-panel" role="dialog" aria-label="Bookly Concierge chat" aria-hidden="true">
       <div class="bw-header">
@@ -65,12 +65,38 @@
     .then((books) => books.forEach((b) => catalogByTitle.set(b.title, b)))
     .catch(() => {});
 
+  // Escape first, unconditionally, so nothing in a tool result or a
+  // customer's own message can inject real HTML -- only *after* that is it
+  // safe to turn the few markdown patterns the model actually produces
+  // (bold, bullet lines) into real formatting instead of literal
+  // asterisks/dashes. Not a full markdown parser on purpose -- just the
+  // patterns actually seen in replies.
+  function escapeHtml(text) {
+    const div = document.createElement("div");
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  function renderMarkdown(text) {
+    let html = escapeHtml(text);
+    html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+    // Bullet markers before italics, and only "- " (not "* "): a bare
+    // asterisk-space list marker would otherwise look like the opening of
+    // an italic run to the regex below, and [^*] matches across newlines,
+    // so it could span from one bullet's "*" all the way to the next
+    // line's, mangling both. Restricting to "-" sidesteps that entirely.
+    html = html.replace(/^- (.+)$/gm, "&bull; $1");
+    html = html.replace(/\*([^*\n]+)\*/g, "<em>$1</em>");
+    return html;
+  }
+
   function addBubble(role, text, pending) {
     const row = document.createElement("div");
     row.className = "bw-row " + role;
     const bubble = document.createElement("div");
     bubble.className = "bw-bubble" + (pending ? " pending" : "");
-    bubble.textContent = text;
+    if (role === "agent") bubble.innerHTML = renderMarkdown(text);
+    else bubble.textContent = text;
     row.appendChild(bubble);
     log.appendChild(row);
     log.scrollTop = log.scrollHeight;
@@ -126,8 +152,8 @@
     // generic greeting rather than requiring it.
     const user = window.BooklyAuth && window.BooklyAuth.currentUser();
     const greeting = user
-      ? `Hi ${user.name.split(" ")[0]}, I'm Bookly Concierge -- you're signed in, so I already know it's you. Ask me about an order, a return, or a policy question.`
-      : "Hi, I'm Bookly Concierge. Ask me about an order, a return, or a policy question -- how can I help?";
+      ? `Hi ${user.name.split(" ")[0]}, good to see you -- I already know it's you, so we can skip straight to it. What's going on?`
+      : "Hi, I'm your Bookly Concierge -- happy to check on an order, help with a return, or settle a policy question. What can I do for you?";
     addBubble("agent", greeting);
   }
 
@@ -168,7 +194,7 @@
       const data = await res.json();
       sessionId = data.session_id;
       sessionStorage.setItem("bookly_session_id", sessionId);
-      pending.textContent = data.reply;
+      pending.innerHTML = renderMarkdown(data.reply);
       pending.classList.remove("pending");
       showMentionedProducts(data.reply);
     } catch (err) {

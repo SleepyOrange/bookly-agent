@@ -28,6 +28,14 @@ def stub_run_turn(session, message):
     if "recommend" in lowered:
         # Names a real catalog title, for the product-card rendering test.
         return "You'd probably enjoy Project Hail Mary by Andy Weir -- it's one of our most-returned-for-a-second-copy titles."
+    if "markdown" in lowered:
+        # Deliberately markdown-heavy, for the rendering test -- bold and a
+        # bullet list should render as real formatting, not literal ** / -.
+        return "**Order status:** delivered!\n- Check your email\n- Reply if you need help"
+    if "html" in lowered:
+        # Looks like it could be HTML if ever rendered unescaped -- the
+        # rendering test asserts this stays inert text, not executed markup.
+        return "Your order ID <img src=x onerror=alert(1)> was not found."
     if "order" in lowered:
         return "Could you share your order ID and the email on the order?"
     return f"Stub reply to: {message}"

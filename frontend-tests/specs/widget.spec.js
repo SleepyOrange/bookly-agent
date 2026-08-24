@@ -80,6 +80,40 @@ test('a reply naming no catalog title shows no product card', async ({ page }) =
   await expect(page.locator('.bw-product-card')).toHaveCount(0);
 });
 
+test('bold and bullet markdown render as real formatting, not literal ** and -', async ({ page }) => {
+  await page.goto('/');
+  await page.click('#bw-launcher');
+  await page.fill('#bw-input', 'markdown test please');
+  await page.click('#bw-form button[type=submit]');
+
+  const bubble = page.locator('.bw-row.agent .bw-bubble').last();
+  await expect(bubble).toContainText('Order status:', { timeout: 10000 });
+
+  await expect(bubble.locator('strong')).toHaveText('Order status:');
+  await expect(bubble).toContainText('•'); // bullet marker, not a literal "-"
+  const rawText = await bubble.textContent();
+  expect(rawText).not.toContain('**');
+  expect(rawText.trim().startsWith('-')).toBe(false);
+});
+
+test('a reply that looks like HTML renders as inert text, not executed markup', async ({ page }) => {
+  let dialogFired = false;
+  page.on('dialog', () => { dialogFired = true; });
+
+  await page.goto('/');
+  await page.click('#bw-launcher');
+  await page.fill('#bw-input', 'this has html in it');
+  await page.click('#bw-form button[type=submit]');
+
+  const bubble = page.locator('.bw-row.agent .bw-bubble').last();
+  await expect(bubble).toContainText('was not found.', { timeout: 10000 });
+
+  // the <img onerror=...> text is shown as literal characters, not parsed
+  // into a real <img> element that would fire onerror
+  await expect(bubble.locator('img')).toHaveCount(0);
+  expect(dialogFired).toBe(false);
+});
+
 test('a product card only stays for the latest reply, not the whole conversation', async ({ page }) => {
   await page.goto('/');
   await page.click('#bw-launcher');
